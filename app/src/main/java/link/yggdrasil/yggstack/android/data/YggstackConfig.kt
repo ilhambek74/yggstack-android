@@ -20,7 +20,20 @@ data class YggstackConfig(
     val forwardEnabled: Boolean = false,
     val multicastBeacon: Boolean = false,
     val multicastListen: Boolean = false,
-    val logLevel: String = "info"
+    val logLevel: String = "info",
+    val cachedPeers: List<CachedPeer> = emptyList()  // Dynamically discovered peers cache
+)
+
+/**
+ * Cached peer information for fast reconnection
+ */
+@Serializable
+data class CachedPeer(
+    val uri: String,              // Peer URI (e.g., "tcp://[fe80::1]:1234")
+    val discoverySource: String,  // "multicast" or "dynamic"
+    val lastSeen: Long,           // Timestamp when last connected
+    val successCount: Int = 0,    // Number of successful connections
+    val failureCount: Int = 0     // Number of failed connection attempts
 )
 
 /**

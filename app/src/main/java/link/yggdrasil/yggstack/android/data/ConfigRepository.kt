@@ -38,6 +38,7 @@ class ConfigRepository(private val context: Context) {
         private val MULTICAST_BEACON = booleanPreferencesKey("multicast_beacon")
         private val MULTICAST_LISTEN = booleanPreferencesKey("multicast_listen")
         private val LOG_LEVEL = stringPreferencesKey("log_level")
+        private val CACHED_PEERS = stringPreferencesKey("cached_peers")
         private val LOGS_ENABLED = booleanPreferencesKey("logs_enabled")
         private val DIAGNOSTICS_TAB_KEY = intPreferencesKey("diagnostics_tab")
     }
@@ -64,7 +65,10 @@ class ConfigRepository(private val context: Context) {
             forwardEnabled = preferences[FORWARD_ENABLED] ?: false,
             multicastBeacon = preferences[MULTICAST_BEACON] ?: false,
             multicastListen = preferences[MULTICAST_LISTEN] ?: false,
-            logLevel = preferences[LOG_LEVEL] ?: "error"
+            logLevel = preferences[LOG_LEVEL] ?: "error",
+            cachedPeers = preferences[CACHED_PEERS]?.let {
+                json.decodeFromString<List<CachedPeer>>(it)
+            } ?: emptyList()
         )
     }
 
@@ -85,6 +89,7 @@ class ConfigRepository(private val context: Context) {
             preferences[MULTICAST_BEACON] = config.multicastBeacon
             preferences[MULTICAST_LISTEN] = config.multicastListen
             preferences[LOG_LEVEL] = config.logLevel
+            preferences[CACHED_PEERS] = json.encodeToString(config.cachedPeers)
         }
     }
 

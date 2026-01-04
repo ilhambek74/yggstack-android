@@ -28,6 +28,7 @@ import link.yggdrasil.yggstack.android.data.PersistentLogger
 import link.yggdrasil.yggstack.android.data.ExposeMapping
 import link.yggdrasil.yggstack.android.data.ForwardMapping
 import link.yggdrasil.yggstack.android.data.Protocol
+import link.yggdrasil.yggstack.android.data.CachedPeer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -100,6 +101,12 @@ class YggstackService : Service() {
     private var isInitialNetworkCallback: Boolean = true // Skip retry on first callback after registration
     private var hasNoNetwork: Boolean = true // Track if we're in no-network state
     private var networkRetryJob: Job? = null // Track pending retry job for cancellation
+    
+    // Peer cache constants
+    private val PEER_CACHE_MAX_SIZE = 10 // Maximum number of cached peers
+    private val PEER_CACHE_STALE_TIME_MS = 60 * 60 * 1000L // 1 hour
+    private val PEER_CACHE_UPDATE_INTERVAL_MS = 60 * 1000L // Update cache every 60 seconds
+    private var peerCacheUpdateJob: Job? = null // Track peer cache update job
     
     // Store last config for automatic restart after crash
     private var lastConfig: YggstackConfig? = null
@@ -432,6 +439,15 @@ class YggstackService : Service() {
                 // Register network callback to monitor WiFi/Cellular changes
                 registerNetworkCallback()
 
+                // Start peer cache updater if multicast listen is enabled (beacon only creates inbound connections)
+                if (config.multicastListen) {
+                    logInfo("Multicast listen enabled - starting peer cache updater")
+                    startPeerCacheUpdater()
+                }
+
+                // Clean up stale cached peers on startup
+                cleanupPeerCache()
+
                 logInfo("Yggstack started successfully")
                 updateNotification("Connected", 0, 0)
 
@@ -574,6 +590,9 @@ class YggstackService : Service() {
                 // Unregister network callback on error too
                 unregisterNetworkCallback()
                 
+                // Stop peer cache updater on error
+                stopPeerCacheUpdater()
+                
                 // Release MulticastLock on error too
                 releaseMulticastLock()
                 
@@ -631,13 +650,38 @@ class YggstackService : Service() {
             // Apply peers and multicast configuration
             var finalConfig = configWithCert
             
-            if (config.peers.isNotEmpty()) {
-                logInfo("Adding ${config.peers.size} peer(s) to config:")
-                config.peers.forEachIndexed { index, peer ->
-                    logInfo("  Peer ${index + 1}: ${peer}")
+            // Combine static peers with cached peers for fast reconnection (only if multicast listen is enabled)
+            val allPeers = config.peers.toMutableList()
+            val now = System.currentTimeMillis()
+            val recentCutoff = now - PEER_CACHE_STALE_TIME_MS
+            
+            // Only use cached peers if multicast listen is enabled (beacon creates inbound connections we can't reconnect to)
+            val recentCachedPeers = if (config.multicastListen) {
+                config.cachedPeers.filter { cached ->
+                    cached.lastSeen > recentCutoff && 
+                    cached.successCount > cached.failureCount &&
+                    !allPeers.contains(cached.uri)
                 }
+            } else {
+                emptyList()
+            }
+            
+            if (recentCachedPeers.isNotEmpty()) {
+                allPeers.addAll(recentCachedPeers.map { it.uri })
+                logInfo("Added ${recentCachedPeers.size} cached peer(s) for fast reconnection:")
+                recentCachedPeers.forEachIndexed { index, cached ->
+                    logInfo("  Cached ${index + 1}: ${cached.uri} (last seen ${(now - cached.lastSeen) / 1000}s ago)")
+                }
+            }
+            
+            if (allPeers.isNotEmpty()) {
+                logInfo("Configuring ${config.peers.size} static + ${recentCachedPeers.size} cached = ${allPeers.size} total peer(s):")
+                config.peers.forEachIndexed { index, peer ->
+                    logInfo("  Static ${index + 1}: ${peer}")
+                }
+                
                 // Add ?maxbackoff=30s to each peer URI for mobile-friendly timeouts
-                val peersWithBackoff = config.peers.map { peer ->
+                val peersWithBackoff = allPeers.map { peer ->
                     if (peer.contains("?")) {
                         if (!peer.contains("maxbackoff=")) {
                             "$peer&maxbackoff=30s"
@@ -1004,6 +1048,158 @@ class YggstackService : Service() {
             if (_isRunning.value) {
                 logInfo("Peer stats updater stopped")
             }
+        }
+    }
+
+    /**
+     * Start periodic peer cache updater
+     */
+    private fun startPeerCacheUpdater() {
+        peerCacheUpdateJob?.cancel()
+        
+        peerCacheUpdateJob = serviceScope.launch {
+            logInfo("Peer cache updater started")
+            kotlinx.coroutines.delay(10000) // Initial delay - let peers stabilize
+            
+            while (_isRunning.value) {
+                try {
+                    updatePeerCache()
+                } catch (e: Exception) {
+                    logError("Error updating peer cache: ${e.message}")
+                }
+                kotlinx.coroutines.delay(PEER_CACHE_UPDATE_INTERVAL_MS)
+            }
+            logInfo("Peer cache updater stopped")
+        }
+    }
+
+    /**
+     * Stop peer cache updater
+     */
+    private fun stopPeerCacheUpdater() {
+        peerCacheUpdateJob?.cancel()
+        peerCacheUpdateJob = null
+    }
+
+    /**
+     * Update peer cache with currently connected peers
+     */
+    private suspend fun updatePeerCache() {
+        val peersJson = yggstack?.getPeersJSON() ?: return
+        val currentConfig = lastConfig ?: return
+        
+        try {
+            val peers = JSONArray(peersJson)
+            val discoveredPeers = mutableListOf<CachedPeer>()
+            
+            // Find all connected non-static outbound peers (multicast discoveries we connected to)
+            for (i in 0 until peers.length()) {
+                val peer = peers.getJSONObject(i)
+                val uri = peer.optString("remote", "")
+                val isUp = peer.optBoolean("Up", false)
+                val isInbound = peer.optBoolean("Inbound", false)
+                
+                if (uri.isNotEmpty() && isUp && !isInbound) {
+                    // Check if this is a static peer (user-configured)
+                    val isStatic = currentConfig.peers.contains(uri)
+                    
+                    if (!isStatic) {
+                        // This is a dynamically discovered outbound peer (multicast listen)
+                        discoveredPeers.add(CachedPeer(
+                            uri = uri,
+                            discoverySource = "multicast",
+                            lastSeen = System.currentTimeMillis(),
+                            successCount = 1
+                        ))
+                        logDebug("Discovered active multicast peer: $uri")
+                    }
+                }
+            }
+            
+            if (discoveredPeers.isNotEmpty()) {
+                // Merge with existing cache
+                val updatedCache = mergePeerCache(currentConfig.cachedPeers, discoveredPeers)
+                
+                // Save updated config with new cache
+                val updatedConfig = currentConfig.copy(cachedPeers = updatedCache)
+                lastConfig = updatedConfig
+                
+                // Persist to preferences
+                val repository = ConfigRepository(applicationContext)
+                repository.saveConfig(updatedConfig)
+                
+                logInfo("Peer cache updated: ${updatedCache.size} cached peer(s)")
+            }
+        } catch (e: Exception) {
+            logError("Error parsing peers for cache update: ${e.message}")
+        }
+    }
+
+    /**
+     * Merge new discovered peers with existing cache
+     */
+    private fun mergePeerCache(
+        existingCache: List<CachedPeer>,
+        newPeers: List<CachedPeer>
+    ): List<CachedPeer> {
+        val cacheMap = existingCache.associateBy { it.uri }.toMutableMap()
+        val now = System.currentTimeMillis()
+        
+        // Update or add new peers
+        newPeers.forEach { newPeer ->
+            val existing = cacheMap[newPeer.uri]
+            if (existing != null) {
+                // Update existing peer - increment success count
+                cacheMap[newPeer.uri] = existing.copy(
+                    lastSeen = now,
+                    successCount = existing.successCount + 1
+                )
+            } else {
+                // Add new peer
+                cacheMap[newPeer.uri] = newPeer
+            }
+        }
+        
+        // Remove stale peers (not seen in PEER_CACHE_STALE_TIME_MS)
+        val staleCutoff = now - PEER_CACHE_STALE_TIME_MS
+        val validPeers = cacheMap.values.filter { it.lastSeen > staleCutoff }
+        
+        // Sort by success count (most successful first), then by last seen (most recent first)
+        val sortedPeers = validPeers.sortedWith(
+            compareByDescending<CachedPeer> { it.successCount - it.failureCount }
+                .thenByDescending { it.lastSeen }
+        )
+        
+        // Limit to max cache size
+        val limitedPeers = sortedPeers.take(PEER_CACHE_MAX_SIZE)
+        
+        logDebug("Peer cache merge: ${existingCache.size} existing, ${newPeers.size} new, ${validPeers.size} valid, ${limitedPeers.size} after limit")
+        
+        return limitedPeers
+    }
+
+    /**
+     * Clean up peer cache - remove stale and failed peers
+     */
+    private suspend fun cleanupPeerCache() {
+        val currentConfig = lastConfig ?: return
+        val now = System.currentTimeMillis()
+        val staleCutoff = now - PEER_CACHE_STALE_TIME_MS
+        
+        // Remove stale peers and those with more failures than successes
+        val cleanedCache = currentConfig.cachedPeers.filter { peer ->
+            peer.lastSeen > staleCutoff && peer.successCount >= peer.failureCount
+        }.take(PEER_CACHE_MAX_SIZE)
+        
+        if (cleanedCache.size != currentConfig.cachedPeers.size) {
+            val removed = currentConfig.cachedPeers.size - cleanedCache.size
+            logInfo("Cleaned peer cache: removed $removed stale/failed peer(s), ${cleanedCache.size} remaining")
+            
+            val updatedConfig = currentConfig.copy(cachedPeers = cleanedCache)
+            lastConfig = updatedConfig
+            
+            val repository = ConfigRepository(applicationContext)
+            repository.saveConfig(updatedConfig)
         }
     }
 
