@@ -342,6 +342,7 @@ class YggstackService : Service() {
 
                 // Build config JSON (handles both new and existing private keys)
                 logDebug("Loading configuration...")
+                logInfo("Config summary: ${config.peers.size} peer(s), multicast=${config.multicastBeacon || config.multicastListen}, proxy=${config.proxyEnabled}")
                 val configJson = buildConfigJson(config)
                 
                 // Store SANITIZED config JSON for diagnostics display (private key truncated)
@@ -618,7 +619,10 @@ class YggstackService : Service() {
             var finalConfig = configWithCert
             
             if (config.peers.isNotEmpty()) {
-                logInfo("Adding ${config.peers.size} peer(s) to config")
+                logInfo("Adding ${config.peers.size} peer(s) to config:")
+                config.peers.forEachIndexed { index, peer ->
+                    logInfo("  Peer ${index + 1}: ${peer}")
+                }
                 // Add ?maxbackoff=30s to each peer URI for mobile-friendly timeouts
                 val peersWithBackoff = config.peers.map { peer ->
                     if (peer.contains("?")) {
@@ -666,6 +670,17 @@ class YggstackService : Service() {
         // Build config with existing private key
         // IMPORTANT: Must match the structure from Mobile.generateConfig()
         logInfo("Using existing private key (length: ${config.privateKey.length}, key: ${truncatePrivateKey(config.privateKey)})")
+        
+        // Log peer configuration
+        if (config.peers.isEmpty()) {
+            logWarn("No peers configured - node will be isolated without multicast discovery")
+        } else {
+            logInfo("Configuring ${config.peers.size} peer(s):")
+            config.peers.forEachIndexed { index, peer ->
+                logInfo("  Peer ${index + 1}: ${peer}")
+            }
+        }
+        
         val peers = if (config.peers.isEmpty()) {
             "[]"
         } else {
@@ -1196,6 +1211,20 @@ class YggstackService : Service() {
         }
     }
 
+    private fun getNetworkTypeName(network: Network?): String {
+        if (network == null) return "None"
+        
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return "Unknown"
+        
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+            else -> "Other"
+        }
+    }
+    
     private fun registerNetworkCallback() {
         try {
             // Initialize network state
@@ -1204,7 +1233,9 @@ class YggstackService : Service() {
             
             networkCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    logInfo("Network available: ${network}")
+                    val networkType = getNetworkTypeName(network)
+                    val previousType = lastNetworkType ?: "None"
+                    logInfo("Network available: ${network} (type: $networkType, previous: $previousType)")
                     
                     // Skip initial callback (fired immediately upon registration)
                     if (isInitialNetworkCallback) {
@@ -1216,32 +1247,37 @@ class YggstackService : Service() {
                     
                     // If returning from no-network state, trigger reconnection immediately
                     if (hasNoNetwork && _isRunning.value && yggstack != null) {
-                        logInfo("Network restored after outage - triggering immediate reconnection")
+                        logInfo("Scenario: Network restored from outage ($previousType → $networkType)")
+                        logInfo("Triggering immediate reconnection after network outage")
                         hasNoNetwork = false
                         retryPeersNow()
                     } else {
+                        logInfo("Network type transition: $previousType → $networkType (hasNoNetwork=$hasNoNetwork)")
                         hasNoNetwork = false
                     }
                 }
                 
                 override fun onLost(network: Network) {
-                    logInfo("Network lost: ${network}")
+                    val lostNetworkType = getNetworkTypeName(network)
+                    val activeNetwork = connectivityManager.activeNetwork
+                    val activeNetworkType = getNetworkTypeName(activeNetwork)
+                    
+                    logInfo("Network lost: ${network} (type: $lostNetworkType, active: $activeNetworkType)")
                     
                     // Check if a new network is already available before triggering retry
                     // This handles network switching (WiFi↔Cellular) correctly
-                    val activeNetwork = connectivityManager.activeNetwork
                     if (activeNetwork != null && _isRunning.value) {
                         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
                         if (capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true) {
-                            logInfo("Switched to new network - forcing reconnection")
+                            logInfo("Scenario: Lost $lostNetworkType, switched to $activeNetworkType - forcing reconnection")
                             hasNoNetwork = false
                             retryPeersNow()
                         } else {
-                            logInfo("New network available but no internet capability")
+                            logInfo("Alternative network $activeNetworkType available but no internet capability")
                             hasNoNetwork = true
                         }
                     } else {
-                        logInfo("No alternative network available - waiting for connection")
+                        logInfo("No alternative network available - waiting for connection (lost: $lostNetworkType)")
                         hasNoNetwork = true
                     }
                 }
@@ -1306,12 +1342,21 @@ class YggstackService : Service() {
         serviceScope.launch {
             if (_isRunning.value) {
                 try {
+                    val now = System.currentTimeMillis()
+                    val timeSinceLastRetry = now - lastNetworkChangeTime
+                    
                     logInfo("Forcing peer reconnection due to network change...")
+                    logDebug("Time since last network event: ${timeSinceLastRetry}ms")
+                    
                     yggstack?.retryPeersNow()
+                    
                     logInfo("Peer retry triggered successfully")
+                    lastNetworkChangeTime = now
                 } catch (e: Exception) {
                     logError("Error triggering peer retry: ${e.message}")
                 }
+            } else {
+                logWarn("Retry skipped - service not running")
             }
         }
     }
