@@ -31,7 +31,10 @@ import link.yggdrasil.yggstack.android.data.Protocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,6 +77,10 @@ class YggstackService : Service() {
     private var screenStateReceiver: BroadcastReceiver? = null
     
     // Network connectivity monitoring
+    private enum class NetworkType {
+        NONE, WIFI, CELLULAR, ETHERNET, VPN, OTHER
+    }
+    
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val connectivityManager by lazy { 
         getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager 
@@ -81,12 +88,18 @@ class YggstackService : Service() {
     private val wifiManager by lazy {
         applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     }
+    private val networkTypeMap = mutableMapOf<Long, NetworkType>() // Track network handle -> type
+    private var currentNetworkType = NetworkType.NONE
     private var lastNetworkType: String? = null
     private var lastNetworkChangeTime: Long = 0
-    private val NETWORK_CHANGE_DEBOUNCE_MS = 5000L // 5 seconds to avoid flip-flop during transitions
+    private var lastNetworkRetryTime: Long = 0
+    private val NETWORK_CHANGE_DEBOUNCE_MS = 5000L // 5 seconds for multicast handling
+    private val NETWORK_STABILIZATION_DELAY_MS = 300L // Wait for network to stabilize before retry
+    private val FLAP_PROTECTION_COOLDOWN_MS = 500L // Prevent rapid retry spam
     private var isOnWifi: Boolean = false
     private var isInitialNetworkCallback: Boolean = true // Skip retry on first callback after registration
-    private var hasNoNetwork: Boolean = false // Track if we're in no-network state
+    private var hasNoNetwork: Boolean = true // Track if we're in no-network state
+    private var networkRetryJob: Job? = null // Track pending retry job for cancellation
     
     // Store last config for automatic restart after crash
     private var lastConfig: YggstackConfig? = null
@@ -1225,60 +1238,165 @@ class YggstackService : Service() {
         }
     }
     
+    private fun getNetworkType(network: Network?): NetworkType {
+        if (network == null) return NetworkType.NONE
+        
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return NetworkType.NONE
+        
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkType.WIFI
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkType.ETHERNET
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> NetworkType.VPN
+            else -> NetworkType.OTHER
+        }
+    }
+    
     private fun registerNetworkCallback() {
         try {
             // Initialize network state
             isOnWifi = checkNetworkType()
             isInitialNetworkCallback = true // Mark first callback as initial
+            val initialNetwork = connectivityManager.activeNetwork
+            currentNetworkType = getNetworkType(initialNetwork)
+            hasNoNetwork = (initialNetwork == null)
+            
+            // Initialize network type map with current network
+            if (initialNetwork != null) {
+                networkTypeMap[initialNetwork.networkHandle] = currentNetworkType
+            }
             
             networkCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    val networkType = getNetworkTypeName(network)
-                    val previousType = lastNetworkType ?: "None"
-                    logInfo("Network available: ${network} (type: $networkType, previous: $previousType)")
+                    val newNetworkType = getNetworkType(network)
+                    val newNetworkTypeName = getNetworkTypeName(network)
+                    val previousType = currentNetworkType
+                    val previousTypeName = when (previousType) {
+                        NetworkType.WIFI -> "WiFi"
+                        NetworkType.CELLULAR -> "Cellular"
+                        NetworkType.ETHERNET -> "Ethernet"
+                        NetworkType.VPN -> "VPN"
+                        NetworkType.NONE -> "None"
+                        NetworkType.OTHER -> "Other"
+                    }
+                    
+                    // Store network type in map for later lookup in onLost
+                    networkTypeMap[network.networkHandle] = newNetworkType
+                    
+                    logInfo("Network available: ${network} (type: $newNetworkTypeName, previous: $previousTypeName)")
                     
                     // Skip initial callback (fired immediately upon registration)
                     if (isInitialNetworkCallback) {
                         isInitialNetworkCallback = false
                         logInfo("Initial network callback - skipping peer retry")
+                        currentNetworkType = newNetworkType
                         hasNoNetwork = false
                         return
                     }
                     
-                    // If returning from no-network state, trigger reconnection immediately
-                    if (hasNoNetwork && _isRunning.value && yggstack != null) {
-                        logInfo("Scenario: Network restored from outage ($previousType → $networkType)")
-                        logInfo("Triggering immediate reconnection after network outage")
-                        hasNoNetwork = false
-                        retryPeersNow()
-                    } else {
-                        logInfo("Network type transition: $previousType → $networkType (hasNoNetwork=$hasNoNetwork)")
-                        hasNoNetwork = false
+                    // Handle different scenarios based on network transition
+                    when {
+                        // Scenario 3: Network restored from outage
+                        hasNoNetwork && _isRunning.value -> {
+                            logInfo("Scenario: Network restored from outage ($previousTypeName → $newNetworkTypeName)")
+                            logInfo("Triggering immediate reconnection after network outage")
+                            currentNetworkType = newNetworkType
+                            hasNoNetwork = false
+                            scheduleNetworkRetry("Network restored", immediate = true)
+                        }
+                        
+                        // Scenario 1: WiFi → Cellular (immediate retry after stabilization)
+                        previousType == NetworkType.WIFI && newNetworkType == NetworkType.CELLULAR && _isRunning.value -> {
+                            logInfo("Scenario: WiFi → Cellular transition")
+                            logInfo("Scheduling immediate retry after cellular stabilization")
+                            currentNetworkType = newNetworkType
+                            hasNoNetwork = false
+                            scheduleNetworkRetry("WiFi to Cellular switch", immediate = false)
+                        }
+                        
+                        // Scenario 2: Cellular → WiFi (wait for onLost)
+                        previousType == NetworkType.CELLULAR && newNetworkType == NetworkType.WIFI -> {
+                            logInfo("Scenario: Cellular → WiFi transition")
+                            logInfo("WiFi available - waiting for Cellular lost event before retry")
+                            currentNetworkType = newNetworkType
+                            hasNoNetwork = false
+                            // Don't retry here - wait for onLost(Cellular)
+                        }
+                        
+                        // Other network type changes
+                        previousType != newNetworkType -> {
+                            logInfo("Network type transition: $previousTypeName → $newNetworkTypeName")
+                            currentNetworkType = newNetworkType
+                            hasNoNetwork = false
+                        }
+                        
+                        else -> {
+                            logInfo("Network available but type unchanged: $newNetworkTypeName")
+                            hasNoNetwork = false
+                        }
                     }
                 }
                 
                 override fun onLost(network: Network) {
-                    val lostNetworkType = getNetworkTypeName(network)
+                    // Look up the lost network type from our tracking map
+                    // Don't query the network object - it may already be disconnected
+                    val lostNetworkType = networkTypeMap.remove(network.networkHandle) ?: NetworkType.NONE
+                    val lostNetworkTypeName = when (lostNetworkType) {
+                        NetworkType.WIFI -> "WiFi"
+                        NetworkType.CELLULAR -> "Cellular"
+                        NetworkType.ETHERNET -> "Ethernet"
+                        NetworkType.VPN -> "VPN"
+                        NetworkType.NONE -> "None"
+                        NetworkType.OTHER -> "Other"
+                    }
+                    
                     val activeNetwork = connectivityManager.activeNetwork
-                    val activeNetworkType = getNetworkTypeName(activeNetwork)
+                    val activeNetworkType = getNetworkType(activeNetwork)
+                    val activeNetworkTypeName = getNetworkTypeName(activeNetwork)
                     
-                    logInfo("Network lost: ${network} (type: $lostNetworkType, active: $activeNetworkType)")
+                    logInfo("Network lost: ${network} (type: $lostNetworkTypeName, active: $activeNetworkTypeName)")
                     
-                    // Check if a new network is already available before triggering retry
-                    // This handles network switching (WiFi↔Cellular) correctly
-                    if (activeNetwork != null && _isRunning.value) {
-                        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-                        if (capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true) {
-                            logInfo("Scenario: Lost $lostNetworkType, switched to $activeNetworkType - forcing reconnection")
+                    // Cancel any pending retry jobs - network state is changing
+                    networkRetryJob?.cancel()
+                    
+                    when {
+                        // Scenario 2 completion: Lost Cellular while WiFi is active
+                        lostNetworkType == NetworkType.CELLULAR && 
+                        activeNetworkType == NetworkType.WIFI && 
+                        _isRunning.value -> {
+                            logInfo("Scenario: Cellular lost, WiFi active - triggering immediate reconnection")
                             hasNoNetwork = false
-                            retryPeersNow()
-                        } else {
-                            logInfo("Alternative network $activeNetworkType available but no internet capability")
-                            hasNoNetwork = true
+                            currentNetworkType = activeNetworkType  // Update to WiFi
+                            scheduleNetworkRetry("Cellular to WiFi completion", immediate = true)
                         }
-                    } else {
-                        logInfo("No alternative network available - waiting for connection (lost: $lostNetworkType)")
-                        hasNoNetwork = true
+                        
+                        // Lost WiFi, check if alternative exists
+                        lostNetworkType == NetworkType.WIFI && activeNetwork != null -> {
+                            val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
+                            if (caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true) {
+                                logInfo("Lost WiFi but alternative network available ($activeNetworkTypeName) - onAvailable will handle retry")
+                                hasNoNetwork = false
+                                currentNetworkType = activeNetworkType
+                            } else {
+                                logInfo("Lost WiFi, alternative network $activeNetworkTypeName has no internet capability")
+                                hasNoNetwork = true
+                                currentNetworkType = NetworkType.NONE
+                            }
+                        }
+                        
+                        // No alternative network available
+                        activeNetwork == null -> {
+                            logInfo("No alternative network available after losing $lostNetworkTypeName")
+                            hasNoNetwork = true
+                            currentNetworkType = NetworkType.NONE
+                        }
+                        
+                        // Other scenarios - alternative network exists
+                        else -> {
+                            logInfo("Lost $lostNetworkTypeName but alternative network available ($activeNetworkTypeName)")
+                            hasNoNetwork = false
+                            currentNetworkType = activeNetworkType
+                        }
                     }
                 }
                 
@@ -1325,6 +1443,45 @@ class YggstackService : Service() {
         }
     }
 
+    private fun scheduleNetworkRetry(reason: String, immediate: Boolean) {
+        val now = System.currentTimeMillis()
+        val timeSinceLastRetry = now - lastNetworkRetryTime
+        
+        // Cancel any pending retry
+        networkRetryJob?.cancel()
+        
+        // Immediate retry for restoration from outage or cellular lost with wifi active
+        if (immediate) {
+            logInfo("$reason - triggering immediate reconnection")
+            retryPeersNow()
+            lastNetworkRetryTime = now
+            return
+        }
+        
+        // Enforce cooldown for network switches (Scenario 4: flapping protection)
+        if (timeSinceLastRetry < FLAP_PROTECTION_COOLDOWN_MS) {
+            logDebug("Retry blocked - cooldown active (${timeSinceLastRetry}ms since last, need ${FLAP_PROTECTION_COOLDOWN_MS}ms)")
+            logDebug("This prevents reconnection spam during rapid network flapping")
+            return
+        }
+        
+        // Schedule retry with stabilization delay
+        logDebug("Retry scheduled in ${NETWORK_STABILIZATION_DELAY_MS}ms - allowing network to stabilize")
+        networkRetryJob = serviceScope.launch {
+            delay(NETWORK_STABILIZATION_DELAY_MS)
+            
+            // Double-check network is still available before retrying
+            val activeNet = connectivityManager.activeNetwork
+            if (activeNet != null && _isRunning.value) {
+                logInfo("$reason - triggering reconnection after stabilization period")
+                retryPeersNow()
+                lastNetworkRetryTime = System.currentTimeMillis()
+            } else {
+                logWarn("Retry cancelled - network no longer available or service stopped")
+            }
+        }
+    }
+
     private fun unregisterNetworkCallback() {
         try {
             networkCallback?.let {
@@ -1332,6 +1489,7 @@ class YggstackService : Service() {
                 logInfo("Network monitoring unregistered")
             }
             networkCallback = null
+            networkTypeMap.clear() // Clear network type tracking
             isInitialNetworkCallback = true // Reset for next registration
         } catch (e: Exception) {
             logError("Failed to unregister network callback: ${e.message}")
