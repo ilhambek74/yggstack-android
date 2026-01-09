@@ -18,8 +18,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import link.yggdrasil.yggstack.android.R
 import link.yggdrasil.yggstack.android.data.*
+import link.yggdrasil.yggstack.android.ui.configuration.discovery.PeerDiscoveryScreen
+import link.yggdrasil.yggstack.android.ui.configuration.discovery.PeerDiscoveryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +41,7 @@ fun ConfigurationScreen(
     var editingExposeMapping by remember { mutableStateOf<ExposeMapping?>(null) }
     var showForwardDialog by remember { mutableStateOf(false) }
     var editingForwardMapping by remember { mutableStateOf<ForwardMapping?>(null) }
+    var showPeerDiscovery by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState(initial = savedScrollPosition)
     
@@ -94,34 +98,31 @@ fun ConfigurationScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Peers Section with clickable header
-            val context = LocalContext.current
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    // Clickable header
-                    Surface(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://publicpeers.neilalexander.dev/"))
-                            context.startActivity(intent)
-                        },
+                    // Header with title and manage button
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        color = Color.Transparent
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            text = stringResource(R.string.peers_section),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        TextButton(
+                            onClick = { showPeerDiscovery = true },
+                            enabled = !isServiceRunning
                         ) {
-                            Text(
-                                text = stringResource(R.string.peers_section),
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier
-                                    .weight(1f)
-                            )
                             Icon(
-                                Icons.Default.Link,
-                                contentDescription = "Find public peers",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
+                                Icons.Default.ManageSearch,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
                             )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Discover peers")
                         }
                     }
                     
@@ -459,6 +460,19 @@ fun ConfigurationScreen(
     }
 
     // Dialogs
+    if (showPeerDiscovery) {
+        val context = LocalContext.current
+        val repository = ConfigRepository(context)
+        val discoveryViewModel: PeerDiscoveryViewModel = viewModel(
+            factory = PeerDiscoveryViewModel.Factory(repository)
+        )
+        
+        PeerDiscoveryScreen(
+            viewModel = discoveryViewModel,
+            onDismiss = { showPeerDiscovery = false }
+        )
+    }
+
     if (showExposeDialog) {
         key(showExposeDialog, editingExposeMapping) {
             ExposeMappingDialog(

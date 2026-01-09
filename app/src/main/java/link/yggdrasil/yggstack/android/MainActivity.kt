@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import link.yggdrasil.yggstack.android.data.ConfigRepository
 import link.yggdrasil.yggstack.android.data.VersionChecker
 import link.yggdrasil.yggstack.android.data.VersionInfo
+import link.yggdrasil.yggstack.android.service.PeerFetcherService
 import link.yggdrasil.yggstack.android.ui.configuration.ConfigurationScreen
 import link.yggdrasil.yggstack.android.ui.configuration.ConfigurationViewModel
 import link.yggdrasil.yggstack.android.ui.diagnostics.DiagnosticsScreen
@@ -95,6 +96,28 @@ fun MainScreen() {
             showPermissionDialog = true
         }
         permissionsChecked = true
+        
+        // Check and download public peers cache if needed
+        coroutineScope.launch {
+            val configRepository = ConfigRepository(context)
+            if (!configRepository.hasPublicPeersCache()) {
+                try {
+                    val peerFetcher = PeerFetcherService()
+                    val result = peerFetcher.fetchPublicPeers()
+                    if (result.isSuccess) {
+                        val peers = result.getOrNull() ?: emptyList()
+                        configRepository.savePublicPeersCache(
+                            link.yggdrasil.yggstack.android.data.PublicPeersCache(
+                                peers = peers,
+                                downloadedAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    // Silent fail - user can manually download later
+                }
+            }
+        }
         
         // Check for updates (only if auto-update is enabled)
         coroutineScope.launch {

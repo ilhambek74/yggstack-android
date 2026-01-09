@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -41,6 +42,8 @@ class ConfigRepository(private val context: Context) {
         private val CACHED_PEERS = stringPreferencesKey("cached_peers")
         private val LOGS_ENABLED = booleanPreferencesKey("logs_enabled")
         private val DIAGNOSTICS_TAB_KEY = intPreferencesKey("diagnostics_tab")
+        private val PUBLIC_PEERS_CACHE = stringPreferencesKey("public_peers_cache")
+        private val SORTED_PEERS_CACHE = stringPreferencesKey("sorted_peers_cache")
     }
 
     /**
@@ -179,6 +182,85 @@ class ConfigRepository(private val context: Context) {
     private fun generatePrivateKey(): String {
         // TODO: Implement actual key generation using yggstack
         return ""
+    }
+
+    // ============ Public Peers Cache Management ============
+
+    /**
+     * Get global public peers cache
+     */
+    suspend fun getPublicPeersCache(): PublicPeersCache {
+        val preferences = context.dataStore.data.first()
+        return preferences[PUBLIC_PEERS_CACHE]?.let {
+            json.decodeFromString<PublicPeersCache>(it)
+        } ?: PublicPeersCache()
+    }
+
+    /**
+     * Save global public peers cache
+     */
+    suspend fun savePublicPeersCache(cache: PublicPeersCache) {
+        context.dataStore.edit { preferences ->
+            preferences[PUBLIC_PEERS_CACHE] = json.encodeToString(cache)
+        }
+    }
+
+    /**
+     * Check if public peers cache exists
+     */
+    suspend fun hasPublicPeersCache(): Boolean {
+        val cache = getPublicPeersCache()
+        return cache.peers.isNotEmpty()
+    }
+
+    /**
+     * Get sorted peers cache
+     */
+    private suspend fun getSortedPeersCache(): SortedPeersCache {
+        val preferences = context.dataStore.data.first()
+        return preferences[SORTED_PEERS_CACHE]?.let {
+            json.decodeFromString<SortedPeersCache>(it)
+        } ?: SortedPeersCache()
+    }
+
+    /**
+     * Get sorted list for specific external IP
+     */
+    suspend fun getSortedListForIp(externalIp: String): PeerListForIp? {
+        val sortedCache = getSortedPeersCache()
+        return sortedCache.sortedByIp[externalIp]
+    }
+
+    /**
+     * Save sorted list for specific external IP
+     */
+    suspend fun saveSortedListForIp(externalIp: String, peerList: PeerListForIp) {
+        val sortedCache = getSortedPeersCache()
+        val updatedCache = sortedCache.copy(
+            sortedByIp = sortedCache.sortedByIp + (externalIp to peerList)
+        )
+        context.dataStore.edit { preferences ->
+            preferences[SORTED_PEERS_CACHE] = json.encodeToString(updatedCache)
+        }
+    }
+
+    /**
+     * Clear all sorted lists (when global cache is updated)
+     */
+    suspend fun clearAllSortedLists() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(SORTED_PEERS_CACHE)
+        }
+    }
+
+    /**
+     * Clear all public peers data
+     */
+    suspend fun clearAllPublicPeersData() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(PUBLIC_PEERS_CACHE)
+            preferences.remove(SORTED_PEERS_CACHE)
+        }
     }
 }
 
