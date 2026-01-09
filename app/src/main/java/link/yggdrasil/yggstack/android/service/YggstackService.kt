@@ -122,6 +122,9 @@ class YggstackService : Service() {
     private val _yggdrasilIp = MutableStateFlow<String?>(null)
     val yggdrasilIp: StateFlow<String?> = _yggdrasilIp.asStateFlow()
 
+    private val _yggdrasilPublicKey = MutableStateFlow<String?>(null)
+    val yggdrasilPublicKey: StateFlow<String?> = _yggdrasilPublicKey.asStateFlow()
+
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
@@ -963,12 +966,19 @@ class YggstackService : Service() {
                     // Double-check service is still running before updating
                     if (!_isRunning.value) break
                     
-                    // Update Yggdrasil IP address
+                    // Update Yggdrasil IP address and public key
                     try {
                         val address = yggstack?.address
                         _yggdrasilIp.value = address
                     } catch (e: Exception) {
                         logError("Error fetching Yggdrasil IP: ${e.message}")
+                    }
+                    
+                    try {
+                        val publicKey = yggstack?.publicKey
+                        _yggdrasilPublicKey.value = publicKey
+                    } catch (e: Exception) {
+                        logError("Error fetching Yggdrasil public key: ${e.message}")
                     }
                     
                     val peersJson = yggstack?.getPeersJSON()

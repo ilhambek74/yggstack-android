@@ -17,7 +17,7 @@
     <string name="private_key_section">Private Key</string>
     <string name="show_private_key">Show private key</string>
     <string name="hide_private_key">Hide private key</string>
-    <string name="yggdrasil_ip_section">Your Yggdrasil IP</string>
+    <string name="yggdrasil_ip_section">Yggdrasil IP</string>
     <string name="copy_ip">Copy IP</string>
     <string name="not_connected">Not connected</string>
     <string name="proxy_config_section">Yggdrasil Proxy</string>

@@ -58,6 +58,9 @@ class DiagnosticsViewModel(
     private val _yggdrasilIp = MutableStateFlow<String?>(null)
     val yggdrasilIp: StateFlow<String?> = _yggdrasilIp.asStateFlow()
 
+    private val _yggdrasilPublicKey = MutableStateFlow<String?>(null)
+    val yggdrasilPublicKey: StateFlow<String?> = _yggdrasilPublicKey.asStateFlow()
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val localBinder = binder as? YggstackService.YggstackBinder
@@ -91,12 +94,7 @@ class DiagnosticsViewModel(
                         _totalPeerCount.value = count
                     }
                 }
-                viewModelScope.launch {
-                    service.yggdrasilIp.collect { ip ->
-                        _yggdrasilIp.value = ip
-                    }
-                }
-                // Note: peerDetailsJSON collection moved to PeerStatus composable
+                // Note: yggdrasilIp, yggdrasilPublicKey, and peerDetailsJSON collection moved to PeerStatus composable
                 // to make it lifecycle-aware (only collect when Peers tab is visible)
                 viewModelScope.launch {
                     service.fullConfigJSON.collect { configJson ->
@@ -127,6 +125,17 @@ class DiagnosticsViewModel(
         viewModelScope.launch {
             repository.configFlow.collect { config ->
                 _yggstackConfig.value = config
+            }
+        }
+        
+        // Clear IP and public key when service stops
+        viewModelScope.launch {
+            _isServiceRunning.collect { isRunning ->
+                if (!isRunning) {
+                    _yggdrasilIp.value = null
+                    _yggdrasilPublicKey.value = null
+                    _peerDetails.value = emptyList()
+                }
             }
         }
     }
@@ -254,12 +263,29 @@ class DiagnosticsViewModel(
     }
 
     /**
-     * Collects peer details from service. Should be called from composables with LaunchedEffect
+     * Collects peer details, IP, and public key from service. Should be called from composables with LaunchedEffect
      * to tie subscription lifecycle to composable visibility.
      */
     suspend fun collectPeerDetails() {
-        yggstackService?.peerDetailsJSON?.collect { json ->
-            _peerDetails.value = parsePeerDetails(json)
+        yggstackService?.let { service ->
+            kotlinx.coroutines.coroutineScope {
+                // Collect all three in parallel
+                launch {
+                    service.peerDetailsJSON.collect { json ->
+                        _peerDetails.value = parsePeerDetails(json)
+                    }
+                }
+                launch {
+                    service.yggdrasilIp.collect { ip ->
+                        _yggdrasilIp.value = ip
+                    }
+                }
+                launch {
+                    service.yggdrasilPublicKey.collect { key ->
+                        _yggdrasilPublicKey.value = key
+                    }
+                }
+            }
         }
     }
 

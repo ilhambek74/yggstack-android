@@ -1,5 +1,8 @@
 package link.yggdrasil.yggstack.android.ui.diagnostics
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,10 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -107,8 +108,8 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
     val currentConfig by viewModel.currentConfig.collectAsState()
     val yggstackConfig by viewModel.yggstackConfig.collectAsState()
     val isServiceRunning by viewModel.isServiceRunning.collectAsState()
-    val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     val scope = rememberCoroutineScope()
     
     var showImportPreview by remember { mutableStateOf(false) }
@@ -235,7 +236,8 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
                 ) {
                     if (currentConfig.isNotEmpty()) {
                         IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(currentConfig))
+                            val clip = ClipData.newPlainText("Yggstack Config", currentConfig)
+                            clipboardManager.setPrimaryClip(clip)
                         }) {
                             Icon(
                                 imageVector = Icons.Default.Share,
@@ -307,7 +309,7 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = "Export/Import proxy and port settings",
+                        text = "Backup/Restore proxy and port settings",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -325,7 +327,7 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
                         enabled = yggstackConfig != null
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Upload,
+                            imageVector = Icons.Default.Download,
                             contentDescription = "Export configuration",
                             tint = if (yggstackConfig != null) MaterialTheme.colorScheme.primary else Color.Gray
                         )
@@ -335,7 +337,7 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
                         importLauncher.launch(arrayOf("application/json"))
                     }) {
                         Icon(
-                            imageVector = Icons.Default.Download,
+                            imageVector = Icons.Default.Upload,
                             contentDescription = "Import configuration",
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -526,7 +528,9 @@ fun PeerStatus(viewModel: DiagnosticsViewModel, isVisible: Boolean) {
     val totalPeerCount by viewModel.totalPeerCount.collectAsState()
     val peerDetails by viewModel.peerDetails.collectAsState()
     val yggdrasilIp by viewModel.yggdrasilIp.collectAsState()
+    val yggdrasilPublicKey by viewModel.yggdrasilPublicKey.collectAsState()
     val context = LocalContext.current
+    val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
 
     // Only collect peer details when this tab is visible and service is running
     LaunchedEffect(isVisible, isServiceRunning) {
@@ -541,7 +545,7 @@ fun PeerStatus(viewModel: DiagnosticsViewModel, isVisible: Boolean) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Yggdrasil IP Section
+        // Yggdrasil IP and Public Key Section
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
@@ -555,39 +559,48 @@ fun PeerStatus(viewModel: DiagnosticsViewModel, isVisible: Boolean) {
                     modifier = Modifier.fillMaxWidth(),
                     readOnly = true,
                     singleLine = true,
-                    isError = yggdrasilIp == null && isServiceRunning
+                    isError = yggdrasilIp == null && isServiceRunning,
+                    trailingIcon = {
+                        if (yggdrasilIp != null) {
+                            IconButton(onClick = {
+                                val clip = ClipData.newPlainText("Yggdrasil IP", yggdrasilIp)
+                                clipboardManager.setPrimaryClip(clip)
+                                // System shows toast automatically on Android 13+
+                            }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy IP")
+                            }
+                        }
+                    }
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Public Key",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = yggdrasilPublicKey ?: context.getString(R.string.not_connected),
+                    onValueChange = { },
+                    modifier = Modifier.fillMaxWidth(),
+                    readOnly = true,
+                    singleLine = true,
+                    isError = yggdrasilPublicKey == null && isServiceRunning,
+                    trailingIcon = {
+                        if (yggdrasilPublicKey != null) {
+                            IconButton(onClick = {
+                                val clip = ClipData.newPlainText("Yggdrasil Public Key", yggdrasilPublicKey)
+                                clipboardManager.setPrimaryClip(clip)
+                                // System shows toast automatically on Android 13+
+                            }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Public Key")
+                            }
+                        }
+                    }
                 )
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Peer Connection Status",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = if (isServiceRunning) "Monitoring active" else "Start service to monitor",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isServiceRunning) MaterialTheme.colorScheme.primary else Color.Gray
-                    )
-                }
-            }
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         if (!isServiceRunning) {

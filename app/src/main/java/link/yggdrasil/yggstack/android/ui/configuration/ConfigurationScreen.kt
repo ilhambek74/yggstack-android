@@ -137,23 +137,27 @@ fun ConfigurationScreen(
                         )
                     }
 
-                    if (!isServiceRunning) {
-                        OutlinedTextField(
-                            value = peerInput,
-                            onValueChange = { peerInput = it },
-                            label = { Text(if (editingPeer != null) "Edit Peer" else stringResource(R.string.peer_uri_hint)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            trailingIcon = {
-                                Row {
-                                    if (editingPeer != null) {
-                                        IconButton(onClick = {
+                    OutlinedTextField(
+                        value = peerInput,
+                        onValueChange = { peerInput = it },
+                        label = { Text(if (editingPeer != null) "Edit Peer" else stringResource(R.string.peer_uri_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isServiceRunning,
+                        trailingIcon = {
+                            Row {
+                                if (editingPeer != null) {
+                                    IconButton(
+                                        onClick = {
                                             editingPeer = null
                                             peerInput = ""
-                                        }) {
-                                            Icon(Icons.Default.Close, contentDescription = "Cancel")
-                                        }
+                                        },
+                                        enabled = !isServiceRunning
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Cancel")
                                     }
-                                    IconButton(onClick = {
+                                }
+                                IconButton(
+                                    onClick = {
                                         if (peerInput.isNotBlank()) {
                                             if (editingPeer != null) {
                                                 viewModel.updatePeer(editingPeer!!, peerInput)
@@ -163,16 +167,17 @@ fun ConfigurationScreen(
                                             }
                                             peerInput = ""
                                         }
-                                    }) {
-                                        Icon(
-                                            if (editingPeer != null) Icons.Default.Check else Icons.Default.Add,
-                                            contentDescription = if (editingPeer != null) "Update" else stringResource(R.string.add_peer)
-                                        )
-                                    }
+                                    },
+                                    enabled = !isServiceRunning
+                                ) {
+                                    Icon(
+                                        if (editingPeer != null) Icons.Default.Check else Icons.Default.Add,
+                                        contentDescription = if (editingPeer != null) "Update" else stringResource(R.string.add_peer)
+                                    )
                                 }
                             }
-                        )
-                    }
+                        }
+                    )
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
