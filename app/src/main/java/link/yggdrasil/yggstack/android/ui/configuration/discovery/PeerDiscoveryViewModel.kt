@@ -46,12 +46,30 @@ class PeerDiscoveryViewModel(
     private val _sortType = MutableStateFlow<String?>(null)
     val sortType: StateFlow<String?> = _sortType.asStateFlow()
 
+    private var sortJob: kotlinx.coroutines.Job? = null
+
+    private val _isCancellable = MutableStateFlow(false)
+    val isCancellable: StateFlow<Boolean> = _isCancellable.asStateFlow()
+
     /**
      * Refresh external IP and load list for current network
      */
     fun refreshExternalIp() {
         viewModelScope.launch {
             try {
+                // Sync isCancellable state with actual Job state
+                val isRttCheckRunning = sortJob?.isActive == true
+                _isCancellable.value = isRttCheckRunning
+                
+                // If RTT check is running, don't interfere with its loading states
+                if (isRttCheckRunning) {
+                    // Just sync selected peers and exit
+                    val config = repository.configFlow.first()
+                    val peersInConfig = config.peers.toSet()
+                    _selectedPeers.value = peersInConfig
+                    return@launch
+                }
+                
                 // Get last known IP from cache
                 val lastKnownIp = repository.getLastExternalIp()
                 
@@ -208,7 +226,11 @@ class PeerDiscoveryViewModel(
      * Sort peers by RTT (protocol connect check)
      */
     fun sortByRTT() {
-        viewModelScope.launch {
+        // Cancel previous sort if running
+        sortJob?.cancel()
+        
+        sortJob = viewModelScope.launch {
+            val originalPeers = _peers.value  // Save original list
             try {
                 val currentPeers = _peers.value
                 if (currentPeers.isEmpty()) {
@@ -216,24 +238,36 @@ class PeerDiscoveryViewModel(
                     return@launch
                 }
 
+                // Reset RTT values to ensure full recheck
+                val peersToCheck = currentPeers.map { it.copy(rtt = null, lastChecked = null) }
+                _peers.value = peersToCheck
+
                 _isLoading.value = true
+                _isCancellable.value = true
                 _loadingMessage.value = "Resolving hostnames..."
                 _errorMessage.value = null
                 _progress.value = 0f
 
-                // Sort by checking unique hosts
-                val sortedPeers = peerPinger.checkPeersByHostWithProgress(currentPeers) { checked, total ->
-                    if (checked < 0) {
-                        // DNS resolution phase (negative values)
-                        val resolved = -checked
-                        _progress.value = resolved.toFloat() / total.toFloat()
-                        _loadingMessage.value = "Resolving hostnames: $resolved/$total"
-                    } else {
-                        // RTT check phase (positive values)
-                        _progress.value = checked.toFloat() / total.toFloat()
-                        _loadingMessage.value = "Checking peers: $checked/$total"
+                // Sort by checking unique hosts with incremental updates
+                val sortedPeers = peerPinger.checkPeersByHostWithProgress(
+                    peers = peersToCheck,
+                    onProgress = { checked, total ->
+                        if (checked < 0) {
+                            // DNS resolution phase (negative values)
+                            val resolved = -checked
+                            _progress.value = resolved.toFloat() / total.toFloat()
+                            _loadingMessage.value = "Resolving hostnames: $resolved/$total"
+                        } else {
+                            // RTT check phase (positive values)
+                            _progress.value = checked.toFloat() / total.toFloat()
+                            _loadingMessage.value = "Checking peers: $checked/$total"
+                        }
+                    },
+                    onIncrementalUpdate = { updatedPeers ->
+                        // Update list immediately as RTT data comes in
+                        _peers.value = updatedPeers
                     }
-                }
+                )
 
                 _peers.value = sortedPeers
                 _sortType.value = "connect"
@@ -252,14 +286,27 @@ class PeerDiscoveryViewModel(
                 }
 
                 _errorMessage.value = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Cancelled by user - restore original list
+                _peers.value = originalPeers
             } catch (e: Exception) {
                 _errorMessage.value = "Error during RTT check: ${e.message}"
             } finally {
                 _isLoading.value = false
+                _isCancellable.value = false
                 _loadingMessage.value = ""
                 _progress.value = 0f
+                sortJob = null
             }
         }
+    }
+
+    /**
+     * Cancel ongoing RTT check
+     */
+    fun cancelSort() {
+        sortJob?.cancel()
+        sortJob = null
     }
 
     /**

@@ -34,6 +34,7 @@ fun PeerDiscoveryScreen(
     val displayPeers by viewModel.getDisplayPeers().collectAsState()
     val selectedPeers by viewModel.selectedPeers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isCancellable by viewModel.isCancellable.collectAsState()
     val loadingMessage by viewModel.loadingMessage.collectAsState()
     val progress by viewModel.progress.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -106,14 +107,28 @@ fun PeerDiscoveryScreen(
                     Text("Get Peers")
                 }
                 
-                Button(
-                    onClick = { viewModel.sortByRTT() },
-                    enabled = !isLoading && displayPeers.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Speed, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("RTT Check")
+                if (isCancellable) {
+                    Button(
+                        onClick = { viewModel.cancelSort() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Cancel")
+                    }
+                } else {
+                    Button(
+                        onClick = { viewModel.sortByRTT() },
+                        enabled = !isLoading && displayPeers.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Speed, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("RTT Check")
+                    }
                 }
             }
 

@@ -250,7 +250,8 @@ class PeerPingerService {
      */
     suspend fun checkPeersByHostWithProgress(
         peers: List<PublicPeerInfo>,
-        onProgress: (checked: Int, total: Int) -> Unit
+        onProgress: (checked: Int, total: Int) -> Unit,
+        onIncrementalUpdate: ((List<PublicPeerInfo>) -> Unit)? = null
     ): List<PublicPeerInfo> = withContext(Dispatchers.IO) {
         // Group peers by resolved IP address (with progress for DNS resolution)
         val peersByIp = groupPeersByIp(peers) { resolved, total ->
@@ -272,7 +273,7 @@ class PeerPingerService {
                 for ((ip, ipPeers) in channel) {
                     val checkedPeer = checkPeerWithProtocolFallback(ipPeers)
                     
-                    synchronized(results) {
+                    val updatedList = synchronized(results) {
                         if (checkedPeer != null) {
                             // Apply RTT to all peers with this IP
                             val rtt = checkedPeer.rtt
@@ -294,7 +295,16 @@ class PeerPingerService {
                         
                         checkedCount++
                         onProgress(checkedCount, uniqueIps.size)
+                        
+                        // Return sorted snapshot for incremental update
+                        results.sortedWith(compareBy(
+                            { it.rtt == null },
+                            { it.rtt }
+                        ))
                     }
+                    
+                    // Send incremental update
+                    onIncrementalUpdate?.invoke(updatedList)
                 }
             }
         }
