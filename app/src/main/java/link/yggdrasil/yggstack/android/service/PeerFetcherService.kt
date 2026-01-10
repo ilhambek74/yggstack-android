@@ -6,9 +6,14 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import link.yggdrasil.yggstack.android.data.PublicPeerInfo
+import org.xbill.DNS.ARecord
+import org.xbill.DNS.Lookup
+import org.xbill.DNS.SimpleResolver
+import org.xbill.DNS.Type
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 
 /**
@@ -48,17 +53,58 @@ class PeerFetcherService {
 
     /**
      * Get current external IPv4 address
+     * Tries ipify.org first, falls back to DNS query via OpenDNS
      */
-    suspend fun getExternalIp(): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun getExternalIp(onStatusUpdate: ((String) -> Unit)? = null): Result<String> = withContext(Dispatchers.IO) {
+        // Try ipify.org first
+        onStatusUpdate?.invoke("Checking external IP (ipify)...")
         try {
             val ip = fetchUrl("https://api.ipify.org?format=text")?.trim()
-            if (ip.isNullOrBlank()) {
-                Result.failure(Exception("Empty response from IP service"))
-            } else {
-                Result.success(ip)
+            if (!ip.isNullOrBlank()) {
+                return@withContext Result.success(ip)
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            // Ignore, try DNS fallback
+        }
+        
+        // Fallback to DNS query via OpenDNS
+        onStatusUpdate?.invoke("Checking external IP (DNS)...")
+        try {
+            val ip = getExternalIpViaDns()
+            if (ip != null) {
+                Result.success(ip)
+            } else {
+                Result.failure(Exception("Failed to get IP from both ipify and DNS"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("Failed to get IP from both ipify and DNS: ${e.message}", e))
+        }
+    }
+
+    /**
+     * Get external IP via DNS query to OpenDNS
+     * Equivalent to: dig +short myip.opendns.com @resolver1.opendns.com
+     */
+    private fun getExternalIpViaDns(): String? {
+        return try {
+            // Configure resolver to use OpenDNS (208.67.222.222)
+            val resolver = SimpleResolver("208.67.222.222")
+            resolver.setTimeout(java.time.Duration.ofSeconds(5))
+            
+            // Query myip.opendns.com for A record
+            val lookup = Lookup("myip.opendns.com", Type.A)
+            lookup.setResolver(resolver)
+            val records = lookup.run()
+            
+            // Extract IP from first A record
+            if (records != null && records.isNotEmpty()) {
+                val aRecord = records[0] as? ARecord
+                aRecord?.address?.hostAddress
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 

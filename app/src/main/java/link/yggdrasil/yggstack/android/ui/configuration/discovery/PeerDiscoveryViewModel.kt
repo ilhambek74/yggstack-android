@@ -86,10 +86,11 @@ class PeerDiscoveryViewModel(
                 
                 // Now detect current external IP
                 _isLoading.value = true
-                _loadingMessage.value = "Checking external IP (api.ipify.org)..."
                 _errorMessage.value = null
                 
-                val ipResult = peerFetcher.getExternalIp()
+                val ipResult = peerFetcher.getExternalIp { status ->
+                    _loadingMessage.value = status
+                }
                 
                 _isLoading.value = false
                 _loadingMessage.value = ""

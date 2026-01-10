@@ -207,6 +207,9 @@ dependencies {
     // Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 
+    // DNS lookup for IP detection fallback
+    implementation("dnsjava:dnsjava:3.5.3")
+
     // MIUI Autostart permission check
     implementation("com.github.XomaDev:MIUI-autostart:v1.3")
 

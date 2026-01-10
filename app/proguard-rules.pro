@@ -57,3 +57,14 @@
 -keep class androidx.compose.** { *; }
 -dontwarn androidx.compose.**
 
+# dnsjava library rules - ignore JVM-specific classes not available on Android
+-dontwarn com.sun.jna.**
+-dontwarn javax.naming.**
+-dontwarn lombok.**
+-dontwarn org.slf4j.**
+-dontwarn sun.net.spi.**
+
+# Keep dnsjava core classes that we use
+-keep class org.xbill.DNS.** { *; }
+-keepclassmembers class org.xbill.DNS.** { *; }
+
