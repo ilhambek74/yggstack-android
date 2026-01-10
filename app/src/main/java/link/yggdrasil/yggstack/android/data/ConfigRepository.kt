@@ -44,6 +44,7 @@ class ConfigRepository(private val context: Context) {
         private val DIAGNOSTICS_TAB_KEY = intPreferencesKey("diagnostics_tab")
         private val PUBLIC_PEERS_CACHE = stringPreferencesKey("public_peers_cache")
         private val SORTED_PEERS_CACHE = stringPreferencesKey("sorted_peers_cache")
+        private val LAST_EXTERNAL_IP = stringPreferencesKey("last_external_ip")
     }
 
     /**
@@ -241,6 +242,23 @@ class ConfigRepository(private val context: Context) {
         )
         context.dataStore.edit { preferences ->
             preferences[SORTED_PEERS_CACHE] = json.encodeToString(updatedCache)
+        }
+    }
+
+    /**
+     * Get last known external IP (or null if never detected)
+     */
+    suspend fun getLastExternalIp(): String? {
+        val preferences = context.dataStore.data.first()
+        return preferences[LAST_EXTERNAL_IP]
+    }
+
+    /**
+     * Save last known external IP
+     */
+    suspend fun saveLastExternalIp(ip: String) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_EXTERNAL_IP] = ip
         }
     }
 

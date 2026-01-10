@@ -52,25 +52,57 @@ class PeerDiscoveryViewModel(
     fun refreshExternalIp() {
         viewModelScope.launch {
             try {
-                // Get external IP
-                val ipResult = peerFetcher.getExternalIp()
-                if (ipResult.isSuccess) {
-                    val ip = ipResult.getOrNull()
-                    _externalIp.value = ip
-                    
-                    // Load data for current IP (always, even if IP didn't change)
-                    if (ip != null) {
-                        loadPeersForCurrentIp(ip)
-                    }
-                }
+                // Get last known IP from cache
+                val lastKnownIp = repository.getLastExternalIp()
+                
+                // Show last known IP initially (or "unknown" if never detected)
+                _externalIp.value = lastKnownIp ?: "unknown"
+                
+                // Load peers for last known IP or unknown
+                loadPeersForCurrentIp(lastKnownIp ?: "unknown")
                 
                 // Sync selected peers with config
                 val config = repository.configFlow.first()
                 val peersInConfig = config.peers.toSet()
                 _selectedPeers.value = peersInConfig
                 
+                // Now detect current external IP
+                _isLoading.value = true
+                _loadingMessage.value = "Checking external IP (api.ipify.org)..."
+                _errorMessage.value = null
+                
+                val ipResult = peerFetcher.getExternalIp()
+                
+                _isLoading.value = false
+                _loadingMessage.value = ""
+                
+                if (ipResult.isSuccess) {
+                    val detectedIp = ipResult.getOrNull()
+                    if (detectedIp != null) {
+                        _externalIp.value = detectedIp
+                        // Save as last known IP
+                        repository.saveLastExternalIp(detectedIp)
+                        // Load peers for detected IP
+                        loadPeersForCurrentIp(detectedIp)
+                    } else {
+                        // Failed to detect - stay with unknown
+                        _externalIp.value = "unknown"
+                        _errorMessage.value = "Failed to detect external IP"
+                        loadPeersForCurrentIp("unknown")
+                    }
+                } else {
+                    // Failed to detect - stay with unknown
+                    _externalIp.value = "unknown"
+                    _errorMessage.value = "Failed to detect external IP: ${ipResult.exceptionOrNull()?.message}"
+                    loadPeersForCurrentIp("unknown")
+                }
+                
             } catch (e: Exception) {
+                _isLoading.value = false
+                _loadingMessage.value = ""
+                _externalIp.value = "unknown"
                 _errorMessage.value = "Error: ${e.message}"
+                loadPeersForCurrentIp("unknown")
             }
         }
     }
