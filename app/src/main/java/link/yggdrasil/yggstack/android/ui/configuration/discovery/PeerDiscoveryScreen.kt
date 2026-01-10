@@ -76,7 +76,7 @@ fun PeerDiscoveryScreen(
                         }
                     }
                 },
-                navigationIcon = {
+                actions = {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
