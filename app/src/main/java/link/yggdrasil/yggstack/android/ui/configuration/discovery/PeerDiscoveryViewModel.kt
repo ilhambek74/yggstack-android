@@ -245,24 +245,16 @@ class PeerDiscoveryViewModel(
 
                 _isLoading.value = true
                 _isCancellable.value = true
-                _loadingMessage.value = "Resolving hostnames..."
+                _loadingMessage.value = "Checking peers..."
                 _errorMessage.value = null
                 _progress.value = 0f
 
-                // Sort by checking unique hosts with incremental updates
+                // Check all peers individually with incremental updates
                 val sortedPeers = peerPinger.checkPeersByHostWithProgress(
                     peers = peersToCheck,
                     onProgress = { checked, total ->
-                        if (checked < 0) {
-                            // DNS resolution phase (negative values)
-                            val resolved = -checked
-                            _progress.value = resolved.toFloat() / total.toFloat()
-                            _loadingMessage.value = "Resolving hostnames: $resolved/$total"
-                        } else {
-                            // RTT check phase (positive values)
-                            _progress.value = checked.toFloat() / total.toFloat()
-                            _loadingMessage.value = "Checking peers: $checked/$total"
-                        }
+                        _progress.value = checked.toFloat() / total.toFloat()
+                        _loadingMessage.value = "Checking peers: $checked/$total"
                     },
                     onIncrementalUpdate = { updatedPeers ->
                         // Update list immediately as RTT data comes in

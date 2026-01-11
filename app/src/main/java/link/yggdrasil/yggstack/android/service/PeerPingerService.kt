@@ -5,6 +5,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import link.yggdrasil.yggstack.android.data.PublicPeerInfo
+import link.yggdrasil.yggstack.mobile.Mobile
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -27,9 +28,36 @@ class PeerPingerService {
     val progress: StateFlow<Float> = _progress
 
     /**
-     * Check a single peer via TCP connect and measure RTT
+     * Check a single peer via protocol-specific method and measure RTT
+     * Supports TCP/TLS/WS/WSS (via TCP connect) and QUIC (via native check)
      */
     suspend fun checkPeer(peer: PublicPeerInfo): PublicPeerInfo = withContext(Dispatchers.IO) {
+        val protocol = extractProtocol(peer.uri)
+        
+        // QUIC requires special handling via native code
+        if (protocol == "quic") {
+            return@withContext try {
+                val rtt = Mobile.checkQUICPeer(peer.uri)
+                if (rtt > 0) {
+                    peer.copy(
+                        rtt = rtt,
+                        lastChecked = System.currentTimeMillis()
+                    )
+                } else {
+                    peer.copy(
+                        rtt = null,
+                        lastChecked = System.currentTimeMillis()
+                    )
+                }
+            } catch (e: Exception) {
+                peer.copy(
+                    rtt = null,
+                    lastChecked = System.currentTimeMillis()
+                )
+            }
+        }
+        
+        // TCP/TLS/WS/WSS - use TCP connect
         try {
             val (host, port) = parseUri(peer.uri)
             
@@ -101,95 +129,6 @@ class PeerPingerService {
     }
 
     /**
-     * Group peers by IP to avoid duplicate checks on same host
-     */
-    suspend fun groupPeersByHost(peers: List<PublicPeerInfo>): Map<String, List<PublicPeerInfo>> {
-        return peers.groupBy { peer ->
-            try {
-                val (host, _) = parseUri(peer.uri)
-                host
-            } catch (e: Exception) {
-                peer.uri // fallback to full URI
-            }
-        }
-    }
-
-    /**
-     * Resolve hostname to IP address
-     * Returns the IP address as string, or null if resolution fails
-     */
-    private suspend fun resolveHostToIp(host: String): String? = withContext(Dispatchers.IO) {
-        try {
-            // Check if already an IP address
-            if (host.matches(Regex("""^\d+\.\d+\.\d+\.\d+$"""))) {
-                return@withContext host
-            }
-            // IPv6 check (simplified)
-            if (host.contains(":")) {
-                return@withContext host
-            }
-            
-            // Resolve DNS
-            val address = InetAddress.getByName(host)
-            address.hostAddress
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Group peers by resolved IP address with progress callback
-     * DNS names pointing to same IP will be grouped together
-     */
-    private suspend fun groupPeersByIp(
-        peers: List<PublicPeerInfo>,
-        onProgress: ((resolved: Int, total: Int) -> Unit)? = null
-    ): Map<String, List<PublicPeerInfo>> = withContext(Dispatchers.IO) {
-        val groups = mutableMapOf<String, MutableList<PublicPeerInfo>>()
-        val resolvedCount = java.util.concurrent.atomic.AtomicInteger(0)
-        val total = peers.size
-        
-        // Resolve DNS in parallel with limited concurrency
-        val channel = Channel<Pair<PublicPeerInfo, String>>(MAX_CONCURRENT_CHECKS)
-        
-        // Launch workers for DNS resolution
-        val workers = List(MAX_CONCURRENT_CHECKS) {
-            launch {
-                for ((peer, _) in channel) {
-                    try {
-                        val (host, _) = parseUri(peer.uri)
-                        val ip = resolveHostToIp(host) ?: host
-                        
-                        synchronized(groups) {
-                            groups.getOrPut(ip) { mutableListOf() }.add(peer)
-                        }
-                    } catch (e: Exception) {
-                        synchronized(groups) {
-                            groups.getOrPut(peer.uri) { mutableListOf() }.add(peer)
-                        }
-                    }
-                    
-                    val count = resolvedCount.incrementAndGet()
-                    onProgress?.invoke(count, total)
-                }
-            }
-        }
-        
-        // Send peers to workers
-        launch {
-            peers.forEach { peer ->
-                channel.send(peer to "")
-            }
-            channel.close()
-        }
-        
-        // Wait for all workers
-        workers.forEach { it.join() }
-        
-        groups
-    }
-
-    /**
      * Extract protocol from URI (tcp, tls, ws, wss, quic, etc.)
      */
     private fun extractProtocol(uriString: String): String? {
@@ -246,73 +185,51 @@ class PeerPingerService {
     }
 
     /**
-     * Check unique hosts and apply RTT to all peers on same host
+     * Check all peers individually with progress tracking
+     * Each peer gets its own RTT measurement
      */
     suspend fun checkPeersByHostWithProgress(
         peers: List<PublicPeerInfo>,
         onProgress: (checked: Int, total: Int) -> Unit,
         onIncrementalUpdate: ((List<PublicPeerInfo>) -> Unit)? = null
     ): List<PublicPeerInfo> = withContext(Dispatchers.IO) {
-        // Group peers by resolved IP address (with progress for DNS resolution)
-        val peersByIp = groupPeersByIp(peers) { resolved, total ->
-            // Show DNS resolution progress: "Resolving: X/Y"
-            onProgress(-resolved, total) // Negative to indicate DNS phase
-        }
-        val uniqueIps = peersByIp.keys.toList()
+        if (peers.isEmpty()) return@withContext emptyList()
         
-        if (uniqueIps.isEmpty()) return@withContext emptyList()
-        
-        // Check each IP group with protocol fallback
+        val total = peers.size
         val results = mutableListOf<PublicPeerInfo>()
-        val channel = Channel<Pair<String, List<PublicPeerInfo>>>(MAX_CONCURRENT_CHECKS)
+        val channel = Channel<PublicPeerInfo>(MAX_CONCURRENT_CHECKS)
         var checkedCount = 0
         
-        // Launch workers
+        // Launch workers to check each peer individually
         val workers = List(MAX_CONCURRENT_CHECKS) {
             launch {
-                for ((ip, ipPeers) in channel) {
-                    val checkedPeer = checkPeerWithProtocolFallback(ipPeers)
+                for (peer in channel) {
+                    val checkedPeer = checkPeer(peer)
                     
                     val updatedList = synchronized(results) {
-                        if (checkedPeer != null) {
-                            // Apply RTT to all peers with this IP
-                            val rtt = checkedPeer.rtt
-                            ipPeers.forEach { peer ->
-                                results.add(peer.copy(
-                                    rtt = rtt,
-                                    lastChecked = System.currentTimeMillis()
-                                ))
-                            }
-                        } else {
-                            // Shouldn't happen, but handle gracefully
-                            ipPeers.forEach { peer ->
-                                results.add(peer.copy(
-                                    rtt = null,
-                                    lastChecked = System.currentTimeMillis()
-                                ))
-                            }
-                        }
-                        
+                        results.add(checkedPeer)
                         checkedCount++
-                        onProgress(checkedCount, uniqueIps.size)
                         
-                        // Return sorted snapshot for incremental update
+                        // Sort current results by RTT
                         results.sortedWith(compareBy(
                             { it.rtt == null },
                             { it.rtt }
                         ))
                     }
                     
-                    // Send incremental update
+                    // Report progress
+                    onProgress(checkedCount, total)
+                    
+                    // Notify incremental update with sorted list
                     onIncrementalUpdate?.invoke(updatedList)
                 }
             }
         }
         
-        // Send IP groups to channel
+        // Send all peers to workers
         launch {
-            peersByIp.forEach { (ip, ipPeers) ->
-                channel.send(ip to ipPeers)
+            peers.forEach { peer ->
+                channel.send(peer)
             }
             channel.close()
         }
@@ -320,7 +237,7 @@ class PeerPingerService {
         // Wait for all workers to complete
         workers.forEach { it.join() }
         
-        // Sort results by RTT
+        // Return final sorted results
         results.sortedWith(compareBy(
             { it.rtt == null },
             { it.rtt }
