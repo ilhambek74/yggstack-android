@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -248,6 +249,39 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     context = context
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Force Stop Button
+        Button(
+            onClick = {
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    // Fallback to general settings
+                    try {
+                        context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                    } catch (e2: Exception) {
+                        // Ignore
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Force Stop")
         }
     }
 }
