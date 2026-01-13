@@ -1,104 +1,55 @@
-# Yggstack Android
+# Yggstack Android - Yggdrasil as SOCKS proxy / port forwarder
+[🇷🇺 Русский](README_RU.md) | [🇬🇧 English](#)
 
-Native Android application for Yggdrasil network connectivity using yggstack.
+## Description
 
-## Features
+This is a full-featured Android UI wrapper for the [Yggstack](https://github.com/yggdrasil-network/yggstack) CLI application.
 
-- **Peer Management**: Add, edit, and remove Yggdrasil peers
-- **SOCKS Proxy Configuration**: Configure SOCKS proxy and DNS resolver
-- **Port Forwarding**: Expose local ports to Yggdrasil network and forward remote ports
-- **Background Service**: Run Yggstack without VPN API
-- **Material Design 3**: Modern UI with light/dark theme support
+Yggstack provides SOCKS5 proxy server and TCP port forwarder functionality over Yggdrasil network similar to a TOR router. It can also serve as a standalone Yggdrasil network node to connect network segments.
 
-## Requirements
+* No VPN / TUN adapter needed
+* No root / administrator access required
+* Web browser access
+* TCP/UDP port forwarder
 
-- Android 6.0+ (API 23+)
-- yggstack.aar library (included in `app/libs/`)
+Check the upstream yggstack [README.md](https://github.com/yggdrasil-network/yggstack) file for more details.
 
-## Building
+## Screenshots
 
-### Using Gradle
+<div style="overflow-x: auto; white-space: nowrap; padding: 10px 0;">
+  <img src="screenshots/img1.jpeg" alt="Screenshot 1" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img3.jpeg" alt="Screenshot 2" width="250" style="display: inline-block;"/>
+</div>
 
-```bash
-./gradlew assembleDebug
-```
 
-### Using Android Studio
 
-1. Open project in Android Studio
-2. Wait for Gradle sync
-3. Build > Make Project
-4. Run > Run 'app'
+## Use cases
+### Enable SOCKS5 proxy to get access to yggdrasil websites. Powered by [Alfis](https://alfis.name) ([dns servers](https://dns.r3v.dev/)).  
+Example: Firefox + Proxy Toggle extension.
+<div style="overflow-x: auto; white-space: nowrap; padding: 10px 0;">
+  <img src="screenshots/img2.jpeg" alt="Screenshot 1" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img5.jpeg" alt="Screenshot 2" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img4.jpeg" alt="Screenshot 2" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img6.jpeg" alt="Screenshot 3" width="250" style="display: inline-block;"/>
+</div>
 
-## Project Structure
+### Forward telegram port with default android client.
+<div style="overflow-x: auto; white-space: nowrap; padding: 10px 0;">
+  <img src="screenshots/img7.jpeg" alt="Screenshot 1" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img8.jpeg" alt="Screenshot 1" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img9.jpeg" alt="Screenshot 1" width="250" style="margin-right: 15px; display: inline-block;"/>
+  <img src="screenshots/img10.jpeg" alt="Screenshot 3" width="250" style="display: inline-block;"/>
+</div>
 
-```
-app/
-├── src/main/
-│   ├── java/io/github/yggstack/android/
-│   │   ├── data/              # Data models and repositories
-│   │   ├── ui/
-│   │   │   ├── configuration/ # Configuration screen
-│   │   │   ├── diagnostics/   # Diagnostics screen
-│   │   │   ├── settings/      # Settings screen
-│   │   │   └── theme/         # Theme and styling
-│   │   ├── MainActivity.kt
-│   │   └── YggstackApplication.kt
-│   ├── res/                   # Resources (layouts, strings, etc.)
-│   └── AndroidManifest.xml
-└── libs/
-    └── yggstack.aar          # Yggstack mobile bindings
-```
-
-## Development Phases
-
-### Phase 1: Basic UI and Build Setup ✅
-- [x] Project structure
-- [x] UI implementation with Compose
-- [x] Data persistence with DataStore
-- [x] Navigation between screens
-- [x] GitHub Actions CI/CD
-
-### Phase 2: Yggdrasil Core Functionality (In Progress)
-- [x] Background service implementation
-- [x] Yggstack integration
-- [x] Peer management
-- [x] Logging system
-- [x] Diagnostics screens
-
-### Phase 3: Advanced Port Forwarding
-- [x] Proxy configuration
-- [x] Port mapping management
-- [ ] Input validation
-- [x] Status monitoring
-
-## GitHub Actions
-
-The project includes automated builds via GitHub Actions. Push a version tag to trigger a build:
-
-```bash
-git tag 1.0.0
-git push origin 1.0.0
-```
-
-Required secrets in GitHub repository settings:
-- `KEYSTORE_FILE` - Base64 encoded keystore
-- `KEYSTORE_PASSWORD` - Keystore password
-- `KEY_ALIAS` - Key alias
-- `KEY_PASSWORD` - Key password
+## Communities
+Several IRC communities exist, including the #yggdrasil IRC channel on libera.chat and various others on Yggdrasil-internal IRC networks.  
+The Russian community is available on Telegram: https://t.me/Yggdrasil_ru
 
 ## License
 
-See LICENSE file in the yggstack library directory.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## Support
-
-For issues and questions, please use the GitHub issue tracker.
-
+This code is released under the terms of the LGPLv3, but with an added exception
+that was shamelessly taken from [godeb](https://github.com/niemeyer/godeb).
+Under certain circumstances, this exception permits distribution of binaries
+that are (statically or dynamically) linked with this code, without requiring
+the distribution of Minimal Corresponding Source or Minimal Application Code.
+For more details, see: [LICENSE](LICENSE).

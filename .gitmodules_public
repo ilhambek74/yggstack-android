@@ -1,0 +1,8 @@
+[submodule "lib/yggstack"]
+	path = lib/yggstack
+	url = git@github.com:DrewCyber/yggstack.git
+	branch = mobile-bindings-ai
+[submodule "lib/yggdrasil-go"]
+	path = lib/yggdrasil-go
+	url = git@github.com:DrewCyber/yggdrasil-go.git
+	branch = yggstack-android-fixes
