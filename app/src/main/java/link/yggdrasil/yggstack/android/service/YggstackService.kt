@@ -683,16 +683,17 @@ class YggstackService : Service() {
                     logInfo("  Static ${index + 1}: ${peer}")
                 }
                 
-                // Add ?maxbackoff=30s to each peer URI for mobile-friendly timeouts
+                // Add ?maxbackoff to each peer URI from config (default 5s, range 5-30s)
+                val maxBackoffValue = "${config.maxBackoff}s"
                 val peersWithBackoff = allPeers.map { peer ->
                     if (peer.contains("?")) {
                         if (!peer.contains("maxbackoff=")) {
-                            "$peer&maxbackoff=30s"
+                            "$peer&maxbackoff=$maxBackoffValue"
                         } else {
                             peer // Already has maxbackoff
                         }
                     } else {
-                        "$peer?maxbackoff=30s"
+                        "$peer?maxbackoff=$maxBackoffValue"
                     }
                 }
                 val peersJson = peersWithBackoff.joinToString("\",\"", "[\"", "\"]")
@@ -744,16 +745,17 @@ class YggstackService : Service() {
         val peers = if (config.peers.isEmpty()) {
             "[]"
         } else {
-            // Add ?maxbackoff=30s to each peer URI for mobile-friendly timeouts
+            // Add ?maxbackoff to each peer URI from config (default 5s, range 5-30s)
+            val maxBackoffValue = "${config.maxBackoff}s"
             val peersWithBackoff = config.peers.map { peer ->
                 if (peer.contains("?")) {
                     if (!peer.contains("maxbackoff=")) {
-                        "$peer&maxbackoff=30s"
+                        "$peer&maxbackoff=$maxBackoffValue"
                     } else {
                         peer // Already has maxbackoff
                     }
                 } else {
-                    "$peer?maxbackoff=30s"
+                    "$peer?maxbackoff=$maxBackoffValue"
                 }
             }
             peersWithBackoff.joinToString("\", \"", "[\"", "\"]")
@@ -1739,6 +1741,7 @@ class YggstackService : Service() {
                 put("multicastBeacon", config.multicastBeacon)
                 put("multicastListen", config.multicastListen)
                 put("logLevel", config.logLevel)
+                put("maxBackoff", config.maxBackoff)
                 put("exposeEnabled", config.exposeEnabled)
                 put("forwardEnabled", config.forwardEnabled)
                 
@@ -1838,6 +1841,7 @@ class YggstackService : Service() {
                     multicastBeacon = json.optBoolean("multicastBeacon", true),
                     multicastListen = json.optBoolean("multicastListen", true),
                     logLevel = json.optString("logLevel", "info"),
+                    maxBackoff = json.optInt("maxBackoff", 5),
                     exposeEnabled = json.optBoolean("exposeEnabled", false),
                     forwardEnabled = json.optBoolean("forwardEnabled", false),
                     exposeMappings = exposeMappings,

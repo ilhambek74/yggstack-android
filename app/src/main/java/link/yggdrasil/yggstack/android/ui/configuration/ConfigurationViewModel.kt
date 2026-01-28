@@ -275,6 +275,10 @@ class ConfigurationViewModel(
             repository.saveLogsEnabled(enabled)
         }
     }
+    
+    fun updateMaxBackoff(seconds: Int) {
+        updateConfig(_config.value.copy(maxBackoff = seconds))
+    }
 
     fun toggleShowPrivateKey() {
         _showPrivateKey.value = !_showPrivateKey.value

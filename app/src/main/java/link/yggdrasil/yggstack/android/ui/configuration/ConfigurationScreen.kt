@@ -180,7 +180,41 @@ fun ConfigurationScreen(
                         }
                     )
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // MaxBackoff setting
+                    var showMaxBackoffDialog by remember { mutableStateOf(false) }
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "MaxBackoff",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(
+                            onClick = { showMaxBackoffDialog = true },
+                            enabled = !isServiceRunning
+                        ) {
+                            Text(
+                                text = "${config.maxBackoff}s",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+                    
+                    if (showMaxBackoffDialog) {
+                        MaxBackoffDialog(
+                            currentValue = config.maxBackoff,
+                            onConfirm = { newValue ->
+                                viewModel.updateMaxBackoff(newValue)
+                                showMaxBackoffDialog = false
+                            },
+                            onDismiss = { showMaxBackoffDialog = false }
+                        )
+                    }
                     
                     // Multicast Discovery title
                     Text(
@@ -931,6 +965,76 @@ fun ForwardMappingDialog(
                         !localPortError && !localIpError && !remoteIpError && !remotePortError
             ) {
                 Text(if (initialMapping != null) "Update" else "Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun MaxBackoffDialog(
+    currentValue: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var sliderValue by remember { mutableStateOf(currentValue.toFloat()) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Max Reconnection Backoff") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Maximum time to wait before attempting peer reconnection",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                Text(
+                    text = "${sliderValue.toInt()}s",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
+                
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    valueRange = 5f..30f,
+                    steps = 24, // 25 total values (5-30)
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "5s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "30s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(sliderValue.toInt()) }
+            ) {
+                Text("OK")
             }
         },
         dismissButton = {

@@ -20,7 +20,8 @@ data class YggstackConfigParcelable(
     val forwardEnabled: Boolean,
     val multicastBeacon: Boolean,
     val multicastListen: Boolean,
-    val logLevel: String
+    val logLevel: String,
+    val maxBackoff: Int
 ) : Parcelable {
 
     fun toYggstackConfig(): YggstackConfig {
@@ -36,7 +37,8 @@ data class YggstackConfigParcelable(
             forwardEnabled = forwardEnabled,
             multicastBeacon = multicastBeacon,
             multicastListen = multicastListen,
-            logLevel = logLevel
+            logLevel = logLevel,
+            maxBackoff = maxBackoff
         )
     }
 
@@ -54,7 +56,8 @@ data class YggstackConfigParcelable(
                 forwardEnabled = config.forwardEnabled,
                 multicastBeacon = config.multicastBeacon,
                 multicastListen = config.multicastListen,
-                logLevel = config.logLevel
+                logLevel = config.logLevel,
+                maxBackoff = config.maxBackoff
             )
         }
     }

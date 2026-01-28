@@ -40,6 +40,7 @@ class ConfigRepository(private val context: Context) {
         private val MULTICAST_LISTEN = booleanPreferencesKey("multicast_listen")
         private val LOG_LEVEL = stringPreferencesKey("log_level")
         private val CACHED_PEERS = stringPreferencesKey("cached_peers")
+        private val MAX_BACKOFF = intPreferencesKey("max_backoff")
         private val LOGS_ENABLED = booleanPreferencesKey("logs_enabled")
         private val DIAGNOSTICS_TAB_KEY = intPreferencesKey("diagnostics_tab")
         private val PUBLIC_PEERS_CACHE = stringPreferencesKey("public_peers_cache")
@@ -72,7 +73,8 @@ class ConfigRepository(private val context: Context) {
             logLevel = preferences[LOG_LEVEL] ?: "error",
             cachedPeers = preferences[CACHED_PEERS]?.let {
                 json.decodeFromString<List<CachedPeer>>(it)
-            } ?: emptyList()
+            } ?: emptyList(),
+            maxBackoff = preferences[MAX_BACKOFF] ?: 5
         )
     }
 
@@ -94,6 +96,7 @@ class ConfigRepository(private val context: Context) {
             preferences[MULTICAST_LISTEN] = config.multicastListen
             preferences[LOG_LEVEL] = config.logLevel
             preferences[CACHED_PEERS] = json.encodeToString(config.cachedPeers)
+            preferences[MAX_BACKOFF] = config.maxBackoff
         }
     }
 
