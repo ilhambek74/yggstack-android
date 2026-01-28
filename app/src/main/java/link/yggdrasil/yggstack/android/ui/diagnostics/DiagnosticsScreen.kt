@@ -762,6 +762,17 @@ fun PeerStatus(viewModel: DiagnosticsViewModel, isVisible: Boolean) {
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
+                            Column {
+                                Text(
+                                    text = "Cost",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${peer.cost}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                         
                         Spacer(modifier = Modifier.height(8.dp))

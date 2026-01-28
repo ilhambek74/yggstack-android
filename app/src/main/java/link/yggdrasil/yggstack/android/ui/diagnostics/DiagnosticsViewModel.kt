@@ -247,6 +247,7 @@ class DiagnosticsViewModel(
                     inbound = peerObj.optBoolean("Inbound", false),
                     port = peerObj.optLong("Port", 0),
                     priority = peerObj.optInt("Priority", 0),
+                    cost = peerObj.optLong("Cost", 0),
                     rxBytes = peerObj.optLong("RXBytes", 0),
                     txBytes = peerObj.optLong("TXBytes", 0),
                     uptime = peerObj.optDouble("Uptime", 0.0) / 1_000_000_000.0, // nanoseconds to seconds
@@ -255,8 +256,8 @@ class DiagnosticsViewModel(
                 peers.add(peer)
             }
             
-            // Sort by URI to prevent list flapping
-            peers.sortedBy { it.uri }
+            // Sort by cost (lower is better), then by URI to prevent list flapping
+            peers.sortedWith(compareBy({ it.cost }, { it.uri }))
         } catch (e: JSONException) {
             emptyList()
         }

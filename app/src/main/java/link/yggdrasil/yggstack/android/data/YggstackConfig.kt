@@ -76,6 +76,7 @@ data class PeerDetail(
     val inbound: Boolean,
     val port: Long,
     val priority: Int,
+    val cost: Long,
     val rxBytes: Long,
     val txBytes: Long,
     val uptime: Double,
