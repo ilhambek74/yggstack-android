@@ -1055,7 +1055,7 @@ class YggstackService : Service() {
                     logError("Error fetching peer stats: ${e.message}")
                     // Don't break on transient errors, but log them
                 }
-                kotlinx.coroutines.delay(5000) // Update every 5 seconds
+                kotlinx.coroutines.delay(1000) // Update every 1 second
             }
             if (_isRunning.value) {
                 logInfo("Peer stats updater stopped")
