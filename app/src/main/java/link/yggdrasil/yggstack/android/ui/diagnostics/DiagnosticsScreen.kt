@@ -240,7 +240,7 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
                             clipboardManager.setPrimaryClip(clip)
                         }) {
                             Icon(
-                                imageVector = Icons.Default.Share,
+                                imageVector = Icons.Default.ContentCopy,
                                 contentDescription = "Copy config",
                                 tint = MaterialTheme.colorScheme.primary
                             )
