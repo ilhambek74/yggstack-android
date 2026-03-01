@@ -263,7 +263,25 @@ class YggstackService : Service() {
         super.onDestroy()
         unregisterScreenStateReceiver()
         unregisterNetworkCallback()
-        stopYggstack()
+        // Stop the Go layer synchronously BEFORE cancelling serviceScope.
+        // stopYggstack() is coroutine-based: if we called it here, the immediately
+        // following serviceScope.cancel() would cancel that coroutine before it even
+        // executes, leaving Go goroutines running and UDP/TCP ports bound.
+        // That causes "address already in use" on the next START_STICKY restart.
+        val instanceToStop = yggstack
+        yggstack = null
+        _isRunning.value = false
+        if (instanceToStop != null) {
+            try {
+                kotlinx.coroutines.runBlocking {
+                    kotlinx.coroutines.withTimeout(4500L) {
+                        instanceToStop.stop()
+                    }
+                }
+            } catch (_: Exception) {
+                logWarn("onDestroy: stop timed out or errored - process will clean up remaining resources")
+            }
+        }
         releaseMulticastLock()
         releaseWakeLock()
         serviceScope.cancel()
@@ -507,9 +525,29 @@ class YggstackService : Service() {
 
     fun stopYggstack() {
         serviceScope.launch {
-            // Use mutex to prevent concurrent start/stop operations
-            if (!operationMutex.tryLock()) {
-                logInfo("Operation already in progress - ignoring stop request")
+            // Wait up to 2 s for any concurrent start operation to release the mutex.
+            // Using tryLock() and silently dropping the stop leaves the service in a
+            // half-alive state (broken peer connections, no recovery) when a network
+            // switch triggers stop while start is still initialising.
+            val lockAcquired = try {
+                kotlinx.coroutines.withTimeout(2000L) {
+                    operationMutex.lock()
+                    true
+                }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                false
+            }
+            if (!lockAcquired) {
+                logWarn("Stop: could not acquire operation lock within 2s - forcing minimal cleanup")
+                val stale = yggstack
+                yggstack = null
+                _isRunning.value = false
+                _isTransitioning.value = false
+                if (stale != null) {
+                    serviceScope.launch(Dispatchers.IO) {
+                        try { stale.stop() } catch (_: Exception) {}
+                    }
+                }
                 return@launch
             }
             
