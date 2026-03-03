@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import link.yggdrasil.yggstack.android.R
 import link.yggdrasil.yggstack.android.data.BackupConfig
 import link.yggdrasil.yggstack.android.data.ConfigRepository
+import link.yggdrasil.yggstack.android.data.YggstackConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -111,24 +112,26 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
     val context = LocalContext.current
     val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     val scope = rememberCoroutineScope()
-    
+
     var showImportPreview by remember { mutableStateOf(false) }
     var importedBackup by remember { mutableStateOf<BackupConfig?>(null) }
-    
-    // Get current backup JSON
-    val backupJson = remember(yggstackConfig) {
-        yggstackConfig?.let { BackupConfig.fromYggstackConfig(it).toJson() } ?: ""
+    var showExportDialog by remember { mutableStateOf(false) }
+    var includeYggdrasil by remember { mutableStateOf(false) }
+
+    // Recompute backup TOML whenever config or toggle changes (used by export launcher)
+    val backupToml = remember(yggstackConfig, includeYggdrasil) {
+        yggstackConfig?.let { BackupConfig.fromYggstackConfig(it, includeYggdrasil).toToml() } ?: ""
     }
-    
-    // Export launcher
+
+    // Export launcher – saves .toml file
     val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
+        contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
         uri?.let {
             scope.launch {
                 try {
                     context.contentResolver.openOutputStream(it)?.use { output ->
-                        output.write(backupJson.toByteArray())
+                        output.write(backupToml.toByteArray())
                     }
                     Toast.makeText(context, "Configuration exported successfully", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
@@ -137,20 +140,20 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
             }
         }
     }
-    
-    // Import launcher
+
+    // Import launcher – accepts both TOML (new) and JSON (legacy)
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
             scope.launch {
                 try {
-                    val jsonString = context.contentResolver.openInputStream(it)?.use { input ->
+                    val fileContent = context.contentResolver.openInputStream(it)?.use { input ->
                         input.bufferedReader().readText()
                     }
-                    
-                    if (jsonString != null) {
-                        val result = BackupConfig.fromJson(jsonString)
+
+                    if (fileContent != null) {
+                        val result = BackupConfig.fromString(fileContent)
                         result.fold(
                             onSuccess = { backup ->
                                 val validation = backup.validate()
@@ -175,7 +178,7 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
             }
         }
     }
-    
+
     // Import preview dialog
     if (showImportPreview && importedBackup != null) {
         ImportPreviewDialog(
@@ -199,12 +202,83 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
         )
     }
 
+    // Export dialog
+    if (showExportDialog && yggstackConfig != null) {
+        ExportBackupDialog(
+            yggstackConfig = yggstackConfig!!,
+            includeYggdrasil = includeYggdrasil,
+            onToggle = { includeYggdrasil = it },
+            onConfirm = {
+                showExportDialog = false
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                exportLauncher.launch("yggstack_backup_$timestamp.toml")
+            },
+            onDismiss = { showExportDialog = false }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        // Backup Configuration Card (top)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.backup_configuration),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.backup_restore_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Export button – opens export dialog
+                    IconButton(
+                        onClick = { showExportDialog = true },
+                        enabled = yggstackConfig != null
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Export configuration",
+                            tint = if (yggstackConfig != null) MaterialTheme.colorScheme.primary else Color.Gray
+                        )
+                    }
+                    // Import button
+                    IconButton(onClick = {
+                        importLauncher.launch(arrayOf("*/*"))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Upload,
+                            contentDescription = "Import configuration",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Yggdrasil Configuration Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -286,83 +360,104 @@ fun ConfigViewer(viewModel: DiagnosticsViewModel) {
                 }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // Backup Configuration Card
+@Composable
+fun ExportBackupDialog(
+    yggstackConfig: YggstackConfig,
+    includeYggdrasil: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val backupToml = remember(yggstackConfig, includeYggdrasil) {
+        BackupConfig.fromYggstackConfig(yggstackConfig, includeYggdrasil).toToml()
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            modifier = Modifier
+                .fillMaxWidth()
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.backup_configuration),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.backup_restore_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.backup_export_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                Divider(modifier = Modifier.padding(bottom = 12.dp))
+
+                // Toggle: include Yggdrasil parameters
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Export button
-                    IconButton(
-                        onClick = {
-                            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                            exportLauncher.launch("yggstack_backup_$timestamp.json")
-                        },
-                        enabled = yggstackConfig != null
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Export configuration",
-                            tint = if (yggstackConfig != null) MaterialTheme.colorScheme.primary else Color.Gray
-                        )
-                    }
-                    // Import button
-                    IconButton(onClick = {
-                        importLauncher.launch(arrayOf("application/json"))
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Upload,
-                            contentDescription = "Import configuration",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.backup_include_yggdrasil),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = includeYggdrasil,
+                        onCheckedChange = onToggle
+                    )
                 }
-            }
-        }
-        
-        if (backupJson.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = if (includeYggdrasil)
+                        stringResource(R.string.backup_desc_full)
+                    else
+                        stringResource(R.string.backup_desc_yggstack_only),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = stringResource(R.string.backup_preview_label),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
                     Text(
-                        text = backupJson,
+                        text = backupToml,
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface
+                        modifier = Modifier.padding(12.dp)
                     )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = onConfirm) {
+                        Text(stringResource(R.string.backup_export_button))
+                    }
                 }
             }
         }
@@ -379,7 +474,6 @@ fun ImportPreviewDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -400,7 +494,52 @@ fun ImportPreviewDialog(
                 )
                 
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
-                
+
+                // Yggdrasil settings (only present in full backups)
+                backup.yggdrasil?.let { ygd ->
+                    Text(
+                        text = stringResource(R.string.backup_yggdrasil_settings),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    val truncatedKey = if (ygd.privateKey.length > 20)
+                        "${ygd.privateKey.take(8)}...${ygd.privateKey.takeLast(8)}"
+                    else "●●●"
+                    Text(
+                        text = stringResource(R.string.backup_private_key_label, truncatedKey),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = stringResource(R.string.backup_peers_count, ygd.peers.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    ygd.peers.forEach { peer ->
+                        Text(
+                            text = "  - $peer",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.backup_multicast_beacon, ygd.multicastBeacon),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = stringResource(R.string.backup_multicast_listen, ygd.multicastListen),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = stringResource(R.string.backup_max_backoff, ygd.maxBackoff),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 // Proxy settings
                 Text(
                     text = stringResource(R.string.proxy_settings),
@@ -445,18 +584,11 @@ fun ImportPreviewDialog(
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
-                backup.expose.mappings.take(3).forEach { mapping ->
+                backup.expose.mappings.forEach { mapping ->
                     Text(
                         text = "  - ${mapping.protocol} ${mapping.localPort} → ${mapping.yggPort}",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace
-                    )
-                }
-                if (backup.expose.mappings.size > 3) {
-                    Text(
-                        text = stringResource(R.string.more_mappings, backup.expose.mappings.size - 3),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
@@ -478,25 +610,21 @@ fun ImportPreviewDialog(
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
-                backup.forward.mappings.take(3).forEach { mapping ->
+                backup.forward.mappings.forEach { mapping ->
                     Text(
                         text = "  - ${mapping.protocol} ${mapping.remoteIp}:${mapping.remotePort} → ${mapping.localPort}",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace
                     )
                 }
-                if (backup.forward.mappings.size > 3) {
-                    Text(
-                        text = stringResource(R.string.more_mappings, backup.forward.mappings.size - 3),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
                 
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Text(
-                    text = stringResource(R.string.import_note),
+                    text = if (backup.yggdrasil != null)
+                        stringResource(R.string.import_note_full)
+                    else
+                        stringResource(R.string.import_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
