@@ -653,6 +653,60 @@ class YggstackService : Service() {
         }
     }
 
+    /**
+     * Updates the in-service config snapshot and refreshes the diagnostics config display.
+     * Call this whenever a live peer change is made so the Config card stays in sync.
+     */
+    fun updateLiveConfig(config: YggstackConfig) {
+        lastConfig = config
+        saveLastConfigToPreferences(config)
+        val updatedJson = buildConfigJson(config)
+        _fullConfigJSON.value = sanitizeConfigJson(updatedJson)
+    }
+
+    /**
+     * Appends the ?maxbackoff=Xs query parameter to a raw peer URI, matching
+     * the same logic used in buildConfigJson. Used when adding/removing live peers.
+     */
+    private fun withMaxBackoff(rawUri: String): String {
+        val maxBackoffValue = "${lastConfig?.maxBackoff ?: 5}s"
+        return when {
+            rawUri.contains("maxbackoff=") -> rawUri
+            rawUri.contains("?") -> "$rawUri&maxbackoff=$maxBackoffValue"
+            else -> "$rawUri?maxbackoff=$maxBackoffValue"
+        }
+    }
+
+    /**
+     * Adds a peer to the running yggdrasil core on the fly (does not modify stored config).
+     */
+    fun addLivePeer(rawUri: String) {
+        serviceScope.launch {
+            try {
+                val fullUri = withMaxBackoff(rawUri)
+                yggstack?.addLivePeer(fullUri)
+                logInfo("Live peer added: $rawUri")
+            } catch (e: Exception) {
+                logError("Error adding live peer $rawUri: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Removes a peer from the running yggdrasil core on the fly (does not modify stored config).
+     */
+    fun removeLivePeer(rawUri: String) {
+        serviceScope.launch {
+            try {
+                val fullUri = withMaxBackoff(rawUri)
+                yggstack?.removeLivePeer(fullUri)
+                logInfo("Live peer removed: $rawUri")
+            } catch (e: Exception) {
+                logError("Error removing live peer $rawUri: ${e.message}")
+            }
+        }
+    }
+
     private fun buildConfigJson(config: YggstackConfig): String {
         // If no private key is provided, generate a complete new config
         if (config.privateKey.isBlank()) {
@@ -692,7 +746,7 @@ class YggstackService : Service() {
             var finalConfig = configWithCert
             
             // Combine static peers with cached peers for fast reconnection (only if multicast listen is enabled)
-            val allPeers = config.peers.toMutableList()
+            val allPeers = config.peers.filter { it !in config.disabledPeers }.toMutableList()
             val now = System.currentTimeMillis()
             val recentCutoff = now - PEER_CACHE_STALE_TIME_MS
             
@@ -716,9 +770,11 @@ class YggstackService : Service() {
             }
             
             if (allPeers.isNotEmpty()) {
-                logInfo("Configuring ${config.peers.size} static + ${recentCachedPeers.size} cached = ${allPeers.size} total peer(s):")
+                val staticActive = config.peers.count { it !in config.disabledPeers }
+                logInfo("Configuring $staticActive static + ${recentCachedPeers.size} cached = ${allPeers.size} total peer(s):")
                 config.peers.forEachIndexed { index, peer ->
-                    logInfo("  Static ${index + 1}: ${peer}")
+                    val state = if (peer in config.disabledPeers) " [disabled]" else ""
+                    logInfo("  Static ${index + 1}: ${peer}${state}")
                 }
                 
                 // Add ?maxbackoff to each peer URI from config (default 5s, range 5-30s)
@@ -771,21 +827,24 @@ class YggstackService : Service() {
         logInfo("Using existing private key (length: ${config.privateKey.length}, key: ${truncatePrivateKey(config.privateKey)})")
         
         // Log peer configuration
+        val activePeers = config.peers.filter { it !in config.disabledPeers }
         if (config.peers.isEmpty()) {
             logWarn("No peers configured - node will be isolated without multicast discovery")
         } else {
-            logInfo("Configuring ${config.peers.size} peer(s):")
+            val disabledCount = config.disabledPeers.size
+            logInfo("Configuring ${activePeers.size}/${config.peers.size} peer(s) (${disabledCount} disabled):")
             config.peers.forEachIndexed { index, peer ->
-                logInfo("  Peer ${index + 1}: ${peer}")
+                val state = if (peer in config.disabledPeers) " [disabled]" else ""
+                logInfo("  Peer ${index + 1}: ${peer}${state}")
             }
         }
         
-        val peers = if (config.peers.isEmpty()) {
+        val peers = if (activePeers.isEmpty()) {
             "[]"
         } else {
             // Add ?maxbackoff to each peer URI from config (default 5s, range 5-30s)
             val maxBackoffValue = "${config.maxBackoff}s"
-            val peersWithBackoff = config.peers.map { peer ->
+            val peersWithBackoff = activePeers.map { peer ->
                 if (peer.contains("?")) {
                     if (!peer.contains("maxbackoff=")) {
                         "$peer&maxbackoff=$maxBackoffValue"

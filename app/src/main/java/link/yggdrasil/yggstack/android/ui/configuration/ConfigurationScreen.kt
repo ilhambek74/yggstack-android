@@ -132,6 +132,8 @@ fun ConfigurationScreen(
                     config.peers.forEach { peer ->
                         PeerItem(
                             peer = peer,
+                            isEnabled = peer !in config.disabledPeers,
+                            onToggleEnabled = { viewModel.togglePeerEnabled(peer) },
                             enabled = !isServiceRunning,
                             onEdit = {
                                 editingPeer = peer
@@ -653,6 +655,8 @@ fun ConfigSectionWithToggle(
 @Composable
 fun PeerItem(
     peer: String,
+    isEnabled: Boolean,
+    onToggleEnabled: () -> Unit,
     enabled: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -667,16 +671,29 @@ fun PeerItem(
     ) {
         Text(
             text = peer,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 4.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isEnabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         )
-        if (enabled) {
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit peer")
+        Row(
+            horizontalArrangement = Arrangement.spacedBy((-8).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (enabled) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_peer))
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit peer")
+                }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_peer))
-            }
+            Checkbox(
+                checked = isEnabled,
+                onCheckedChange = { onToggleEnabled() }
+            )
         }
     }
 }

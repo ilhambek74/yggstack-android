@@ -194,7 +194,36 @@ class ConfigurationViewModel(
         val index = currentPeers.indexOf(oldPeer)
         if (index != -1 && newPeer !in currentPeers) {
             currentPeers[index] = newPeer.trim()
-            updateConfig(_config.value.copy(peers = currentPeers))
+            // Update disabledPeers reference if the edited peer was disabled
+            val currentDisabled = _config.value.disabledPeers.toMutableList()
+            val disabledIndex = currentDisabled.indexOf(oldPeer)
+            if (disabledIndex != -1) {
+                currentDisabled[disabledIndex] = newPeer.trim()
+                updateConfig(_config.value.copy(peers = currentPeers, disabledPeers = currentDisabled))
+            } else {
+                updateConfig(_config.value.copy(peers = currentPeers))
+            }
+        }
+    }
+
+    fun togglePeerEnabled(peer: String) {
+        val currentDisabled = _config.value.disabledPeers.toMutableList()
+        if (peer in currentDisabled) {
+            currentDisabled.remove(peer)
+            val newConfig = _config.value.copy(disabledPeers = currentDisabled)
+            updateConfig(newConfig)
+            if (_serviceState.value is ServiceState.Running) {
+                yggstackService?.addLivePeer(peer)
+                yggstackService?.updateLiveConfig(newConfig)
+            }
+        } else {
+            currentDisabled.add(peer)
+            val newConfig = _config.value.copy(disabledPeers = currentDisabled)
+            updateConfig(newConfig)
+            if (_serviceState.value is ServiceState.Running) {
+                yggstackService?.removeLivePeer(peer)
+                yggstackService?.updateLiveConfig(newConfig)
+            }
         }
     }
 

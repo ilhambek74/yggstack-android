@@ -42,6 +42,7 @@ class ConfigRepository(private val context: Context) {
         private val CACHED_PEERS = stringPreferencesKey("cached_peers")
         private val MAX_BACKOFF = intPreferencesKey("max_backoff")
         private val LOGS_ENABLED = booleanPreferencesKey("logs_enabled")
+        private val DISABLED_PEERS = stringPreferencesKey("disabled_peers")
         private val DIAGNOSTICS_TAB_KEY = intPreferencesKey("diagnostics_tab")
         private val PUBLIC_PEERS_CACHE = stringPreferencesKey("public_peers_cache")
         private val SORTED_PEERS_CACHE = stringPreferencesKey("sorted_peers_cache")
@@ -75,7 +76,10 @@ class ConfigRepository(private val context: Context) {
             cachedPeers = preferences[CACHED_PEERS]?.let {
                 json.decodeFromString<List<CachedPeer>>(it)
             } ?: emptyList(),
-            maxBackoff = preferences[MAX_BACKOFF] ?: 5
+            maxBackoff = preferences[MAX_BACKOFF] ?: 5,
+            disabledPeers = preferences[DISABLED_PEERS]?.let {
+                json.decodeFromString<List<String>>(it)
+            } ?: emptyList()
         )
     }
 
@@ -98,6 +102,7 @@ class ConfigRepository(private val context: Context) {
             preferences[LOG_LEVEL] = config.logLevel
             preferences[CACHED_PEERS] = json.encodeToString(config.cachedPeers)
             preferences[MAX_BACKOFF] = config.maxBackoff
+            preferences[DISABLED_PEERS] = json.encodeToString(config.disabledPeers)
         }
     }
 
