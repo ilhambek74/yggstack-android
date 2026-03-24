@@ -292,7 +292,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
                 SettingItem(
                     label = stringResource(R.string.library_version),
-                    value = "yggstack 0.1.0"
+                    value = "yggstack 1.0.5"
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
