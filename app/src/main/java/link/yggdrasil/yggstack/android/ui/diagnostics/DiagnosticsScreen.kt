@@ -659,6 +659,8 @@ fun PeerStatus(viewModel: DiagnosticsViewModel, isVisible: Boolean) {
     val yggdrasilPublicKey by viewModel.yggdrasilPublicKey.collectAsState()
     val context = LocalContext.current
     val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+    val savedScrollPosition by viewModel.peerStatusScrollPosition.collectAsState()
+    val scrollState = rememberScrollState(initial = savedScrollPosition)
 
     // Only collect peer details when this tab is visible and service is running
     LaunchedEffect(isVisible, isServiceRunning) {
@@ -667,10 +669,15 @@ fun PeerStatus(viewModel: DiagnosticsViewModel, isVisible: Boolean) {
         }
     }
 
+    // Save scroll position when it changes
+    LaunchedEffect(scrollState.value) {
+        viewModel.savePeerStatusScrollPosition(scrollState.value)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(16.dp)
     ) {
         // Yggdrasil IP and Public Key Section

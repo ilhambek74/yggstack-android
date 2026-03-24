@@ -61,6 +61,9 @@ class DiagnosticsViewModel(
     private val _yggdrasilPublicKey = MutableStateFlow<String?>(null)
     val yggdrasilPublicKey: StateFlow<String?> = _yggdrasilPublicKey.asStateFlow()
 
+    private val _peerStatusScrollPosition = MutableStateFlow(0)
+    val peerStatusScrollPosition: StateFlow<Int> = _peerStatusScrollPosition.asStateFlow()
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val localBinder = binder as? YggstackService.YggstackBinder
@@ -160,6 +163,10 @@ class DiagnosticsViewModel(
     private fun loadConfig() {
         // Config is now loaded from service's fullConfigJSON flow
         // in onServiceConnected, so this method can be simplified or removed
+    }
+
+    fun savePeerStatusScrollPosition(position: Int) {
+        _peerStatusScrollPosition.value = position
     }
 
     fun clearLogs() {
