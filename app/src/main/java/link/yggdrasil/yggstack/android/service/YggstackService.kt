@@ -669,6 +669,9 @@ class YggstackService : Service() {
      * the same logic used in buildConfigJson. Used when adding/removing live peers.
      */
     private fun withMaxBackoff(rawUri: String): String {
+        if (lastConfig?.maxBackoffEnabled == false) {
+            return rawUri
+        }
         val maxBackoffValue = "${lastConfig?.maxBackoff ?: 5}s"
         return when {
             rawUri.contains("maxbackoff=") -> rawUri
@@ -700,6 +703,9 @@ class YggstackService : Service() {
             try {
                 val fullUri = withMaxBackoff(rawUri)
                 yggstack?.removeLivePeer(fullUri)
+                if (fullUri != rawUri) {
+                    yggstack?.removeLivePeer(rawUri)
+                }
                 logInfo("Live peer removed: $rawUri")
             } catch (e: Exception) {
                 logError("Error removing live peer $rawUri: ${e.message}")
@@ -777,17 +783,20 @@ class YggstackService : Service() {
                     logInfo("  Static ${index + 1}: ${peer}${state}")
                 }
                 
-                // Add ?maxbackoff to each peer URI from config (default 5s, range 5-30s)
-                val maxBackoffValue = "${config.maxBackoff}s"
                 val peersWithBackoff = allPeers.map { peer ->
-                    if (peer.contains("?")) {
-                        if (!peer.contains("maxbackoff=")) {
-                            "$peer&maxbackoff=$maxBackoffValue"
-                        } else {
-                            peer // Already has maxbackoff
-                        }
+                    if (!config.maxBackoffEnabled) {
+                        peer
                     } else {
-                        "$peer?maxbackoff=$maxBackoffValue"
+                        val maxBackoffValue = "${config.maxBackoff}s"
+                        if (peer.contains("?")) {
+                            if (!peer.contains("maxbackoff=")) {
+                                "$peer&maxbackoff=$maxBackoffValue"
+                            } else {
+                                peer // Already has maxbackoff
+                            }
+                        } else {
+                            "$peer?maxbackoff=$maxBackoffValue"
+                        }
                     }
                 }
                 val peersJson = peersWithBackoff.joinToString("\",\"", "[\"", "\"]")
@@ -842,17 +851,20 @@ class YggstackService : Service() {
         val peers = if (activePeers.isEmpty()) {
             "[]"
         } else {
-            // Add ?maxbackoff to each peer URI from config (default 5s, range 5-30s)
-            val maxBackoffValue = "${config.maxBackoff}s"
             val peersWithBackoff = activePeers.map { peer ->
-                if (peer.contains("?")) {
-                    if (!peer.contains("maxbackoff=")) {
-                        "$peer&maxbackoff=$maxBackoffValue"
-                    } else {
-                        peer // Already has maxbackoff
-                    }
+                if (!config.maxBackoffEnabled) {
+                    peer
                 } else {
-                    "$peer?maxbackoff=$maxBackoffValue"
+                    val maxBackoffValue = "${config.maxBackoff}s"
+                    if (peer.contains("?")) {
+                        if (!peer.contains("maxbackoff=")) {
+                            "$peer&maxbackoff=$maxBackoffValue"
+                        } else {
+                            peer // Already has maxbackoff
+                        }
+                    } else {
+                        "$peer?maxbackoff=$maxBackoffValue"
+                    }
                 }
             }
             peersWithBackoff.joinToString("\", \"", "[\"", "\"]")

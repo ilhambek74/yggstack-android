@@ -199,13 +199,24 @@ fun ConfigurationScreen(
                             text = "MaxBackoff",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        TextButton(
-                            onClick = { showMaxBackoffDialog = true },
-                            enabled = !isServiceRunning
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = "${config.maxBackoff}s",
-                                style = MaterialTheme.typography.titleMedium
+                            TextButton(
+                                onClick = { showMaxBackoffDialog = true },
+                                enabled = !isServiceRunning && config.maxBackoffEnabled
+                            ) {
+                                Text(
+                                    text = "${config.maxBackoff}s",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                            Switch(
+                                checked = config.maxBackoffEnabled,
+                                onCheckedChange = { viewModel.setMaxBackoffEnabled(it) },
+                                enabled = !isServiceRunning,
+                                modifier = Modifier.scale(0.6f)
                             )
                         }
                     }

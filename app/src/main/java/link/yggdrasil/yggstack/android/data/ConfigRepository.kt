@@ -40,6 +40,7 @@ class ConfigRepository(private val context: Context) {
         private val MULTICAST_LISTEN = booleanPreferencesKey("multicast_listen")
         private val LOG_LEVEL = stringPreferencesKey("log_level")
         private val CACHED_PEERS = stringPreferencesKey("cached_peers")
+        private val MAX_BACKOFF_ENABLED = booleanPreferencesKey("max_backoff_enabled")
         private val MAX_BACKOFF = intPreferencesKey("max_backoff")
         private val LOGS_ENABLED = booleanPreferencesKey("logs_enabled")
         private val DISABLED_PEERS = stringPreferencesKey("disabled_peers")
@@ -76,6 +77,7 @@ class ConfigRepository(private val context: Context) {
             cachedPeers = preferences[CACHED_PEERS]?.let {
                 json.decodeFromString<List<CachedPeer>>(it)
             } ?: emptyList(),
+            maxBackoffEnabled = preferences[MAX_BACKOFF_ENABLED] ?: true,
             maxBackoff = preferences[MAX_BACKOFF] ?: 5,
             disabledPeers = preferences[DISABLED_PEERS]?.let {
                 json.decodeFromString<List<String>>(it)
@@ -101,6 +103,7 @@ class ConfigRepository(private val context: Context) {
             preferences[MULTICAST_LISTEN] = config.multicastListen
             preferences[LOG_LEVEL] = config.logLevel
             preferences[CACHED_PEERS] = json.encodeToString(config.cachedPeers)
+            preferences[MAX_BACKOFF_ENABLED] = config.maxBackoffEnabled
             preferences[MAX_BACKOFF] = config.maxBackoff
             preferences[DISABLED_PEERS] = json.encodeToString(config.disabledPeers)
         }

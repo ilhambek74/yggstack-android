@@ -315,6 +315,10 @@ class ConfigurationViewModel(
         updateConfig(_config.value.copy(maxBackoff = seconds))
     }
 
+    fun setMaxBackoffEnabled(enabled: Boolean) {
+        updateConfig(_config.value.copy(maxBackoffEnabled = enabled))
+    }
+
     fun toggleShowPrivateKey() {
         _showPrivateKey.value = !_showPrivateKey.value
     }

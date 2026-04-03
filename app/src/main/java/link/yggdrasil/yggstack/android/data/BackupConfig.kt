@@ -13,6 +13,7 @@ data class YggdrasilSettings(
     val peers: List<String>,
     val multicastBeacon: Boolean,
     val multicastListen: Boolean,
+    val maxBackoffEnabled: Boolean = true,
     val maxBackoff: Int
 )
 
@@ -46,6 +47,7 @@ data class BackupConfig(
                     peers = config.peers,
                     multicastBeacon = config.multicastBeacon,
                     multicastListen = config.multicastListen,
+                    maxBackoffEnabled = config.maxBackoffEnabled,
                     maxBackoff = config.maxBackoff
                 ) else null,
                 proxy = ProxySettings(
@@ -78,6 +80,7 @@ data class BackupConfig(
             val ygPeers = mutableListOf<String>()
             var ygMulticastBeacon = false
             var ygMulticastListen = false
+            var ygMaxBackoffEnabled = true
             var ygMaxBackoff = 0
             var hasYggdrasil = false
 
@@ -170,6 +173,7 @@ data class BackupConfig(
                         "peers"           -> ygPeers.addAll(parseTomlStringArray(rawVal))
                         "multicastBeacon" -> ygMulticastBeacon  = boolVal()
                         "multicastListen" -> ygMulticastListen  = boolVal()
+                        "maxBackoffEnabled" -> ygMaxBackoffEnabled = boolVal()
                         "maxBackoff"      -> ygMaxBackoff        = intVal()
                     }
                     "proxy" -> when (key) {
@@ -206,6 +210,7 @@ data class BackupConfig(
                     peers           = ygPeers,
                     multicastBeacon = ygMulticastBeacon,
                     multicastListen = ygMulticastListen,
+                    maxBackoffEnabled = ygMaxBackoffEnabled,
                     maxBackoff      = ygMaxBackoff
                 ) else null,
                 proxy   = ProxySettings(proxyEnabled, proxySocks, proxyDns),
@@ -270,6 +275,7 @@ data class BackupConfig(
             appendLine("peers = [$peersToml]")
             appendLine("multicastBeacon = ${yggdrasil.multicastBeacon}")
             appendLine("multicastListen = ${yggdrasil.multicastListen}")
+            appendLine("maxBackoffEnabled = ${yggdrasil.maxBackoffEnabled}")
             appendLine("maxBackoff = ${yggdrasil.maxBackoff}")
             appendLine()
         }
@@ -325,6 +331,7 @@ data class BackupConfig(
                 peers = it.peers,
                 multicastBeacon = it.multicastBeacon,
                 multicastListen = it.multicastListen,
+                maxBackoffEnabled = it.maxBackoffEnabled,
                 maxBackoff = it.maxBackoff
             )
         } ?: base
