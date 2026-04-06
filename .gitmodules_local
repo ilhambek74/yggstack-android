@@ -1,4 +1,0 @@
-[submodule "lib/yggstack"]
-	path = lib/yggstack
-	url = ../yggstack
-	branch = mobile-bindings-ai
