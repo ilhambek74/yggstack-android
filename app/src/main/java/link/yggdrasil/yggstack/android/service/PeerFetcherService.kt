@@ -1,5 +1,6 @@
 package link.yggdrasil.yggstack.android.service
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -44,6 +45,20 @@ class PeerFetcherService {
                 return@withContext Result.failure(Exception("Failed to fetch from both primary and mirror URLs"))
             }
 
+            val peers = parsePublicNodesJson(jsonString)
+            Result.success(peers)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Load public peers from the bundled asset (publicnodes.json packed into the APK).
+     * Used as an immediate seed on first launch so the user is never left with an empty list.
+     */
+    suspend fun loadBundledPeers(context: Context): Result<List<PublicPeerInfo>> = withContext(Dispatchers.IO) {
+        try {
+            val jsonString = context.assets.open("publicnodes.json").bufferedReader().use { it.readText() }
             val peers = parsePublicNodesJson(jsonString)
             Result.success(peers)
         } catch (e: Exception) {

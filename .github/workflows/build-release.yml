@@ -66,6 +66,15 @@ jobs:
           mkdir -p ../../app/libs/
           cp android-build/yggstack.aar ../../app/libs/
 
+      - name: Download latest publicnodes.json for bundled asset
+        run: |
+          curl -fsSL --max-time 15 https://publicpeers.neilalexander.dev/publicnodes.json \
+            -o app/src/main/assets/publicnodes.json \
+          || curl -fsSL --max-time 15 https://peers.yggdrasil.link/publicnodes.json \
+            -o app/src/main/assets/publicnodes.json \
+          || echo "All mirrors unavailable; keeping committed publicnodes.json"
+          echo "Bundled publicnodes.json size: $(wc -c < app/src/main/assets/publicnodes.json) bytes"
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 

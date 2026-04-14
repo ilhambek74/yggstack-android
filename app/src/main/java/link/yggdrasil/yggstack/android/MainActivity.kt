@@ -130,8 +130,24 @@ fun MainScreen() {
         coroutineScope.launch {
             val configRepository = ConfigRepository(context)
             if (!configRepository.hasPublicPeersCache()) {
+                val peerFetcher = PeerFetcherService()
+
+                // Immediately seed from the bundled asset so the user is never left empty-handed
+                val bundledResult = peerFetcher.loadBundledPeers(context)
+                if (bundledResult.isSuccess) {
+                    val bundledPeers = bundledResult.getOrNull() ?: emptyList()
+                    if (bundledPeers.isNotEmpty()) {
+                        configRepository.savePublicPeersCache(
+                            link.yggdrasil.yggstack.android.data.PublicPeersCache(
+                                peers = bundledPeers,
+                                downloadedAt = null  // null marks it as the bundled seed
+                            )
+                        )
+                    }
+                }
+
+                // Then try to refresh from network and overwrite with up-to-date data
                 try {
-                    val peerFetcher = PeerFetcherService()
                     val result = peerFetcher.fetchPublicPeers()
                     if (result.isSuccess) {
                         val peers = result.getOrNull() ?: emptyList()
@@ -143,7 +159,7 @@ fun MainScreen() {
                         )
                     }
                 } catch (e: Exception) {
-                    // Silent fail - user can manually download later
+                    // Silent fail - bundled peers are already in cache
                 }
             }
         }
