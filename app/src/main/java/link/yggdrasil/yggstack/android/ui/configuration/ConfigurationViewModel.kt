@@ -279,6 +279,15 @@ class ConfigurationViewModel(
         updateConfig(_config.value.copy(exposeMappings = newOrder))
     }
 
+    fun toggleExposeMapping(mapping: ExposeMapping) {
+        val newEnabled = !mapping.enabled
+        val newList = _config.value.exposeMappings.map { if (it == mapping) it.copy(enabled = newEnabled) else it }
+        updateConfig(_config.value.copy(exposeMappings = newList))
+        if (_serviceState.value is ServiceState.Running) {
+            yggstackService?.enableExposeMapping(mapping, newEnabled)
+        }
+    }
+
     fun toggleExposeEnabled() {
         updateConfig(_config.value.copy(exposeEnabled = !_config.value.exposeEnabled))
     }
@@ -306,6 +315,15 @@ class ConfigurationViewModel(
 
     fun reorderForwardMappings(newOrder: List<ForwardMapping>) {
         updateConfig(_config.value.copy(forwardMappings = newOrder))
+    }
+
+    fun toggleForwardMapping(mapping: ForwardMapping) {
+        val newEnabled = !mapping.enabled
+        val newList = _config.value.forwardMappings.map { if (it == mapping) it.copy(enabled = newEnabled) else it }
+        updateConfig(_config.value.copy(forwardMappings = newList))
+        if (_serviceState.value is ServiceState.Running) {
+            yggstackService?.enableForwardMapping(mapping, newEnabled)
+        }
     }
 
     fun toggleForwardEnabled() {

@@ -914,6 +914,10 @@ class YggstackService : Service() {
             if (config.forwardEnabled && config.forwardMappings.isNotEmpty()) {
                 logDebug("Setting up ${config.forwardMappings.size} forward port mapping(s)...")
                 config.forwardMappings.forEach { mapping ->
+                    if (!mapping.enabled) {
+                        logInfo("↷ Skipping disabled forward mapping: ${mapping.protocol} ${mapping.localIp}:${mapping.localPort} -> [${mapping.remoteIp}]:${mapping.remotePort}")
+                        return@forEach
+                    }
                     try {
                         val localAddr = "${mapping.localIp}:${mapping.localPort}"
                         val remoteAddr = "[${mapping.remoteIp}]:${mapping.remotePort}"
@@ -943,6 +947,10 @@ class YggstackService : Service() {
             if (config.exposeEnabled && config.exposeMappings.isNotEmpty()) {
                 logDebug("Setting up ${config.exposeMappings.size} expose port mapping(s)...")
                 config.exposeMappings.forEach { mapping ->
+                    if (!mapping.enabled) {
+                        logInfo("↷ Skipping disabled expose mapping: ${mapping.protocol} port ${mapping.yggPort} -> ${mapping.localIp}:${mapping.localPort}")
+                        return@forEach
+                    }
                     try {
                         val localAddr = "${mapping.localIp}:${mapping.localPort}"
                         
@@ -975,7 +983,75 @@ class YggstackService : Service() {
             logError("Stack trace: ${e.stackTraceToString().take(300)}")
         }
     }
-    
+
+    /**
+     * Enable or disable a single expose (remote) mapping while the service is running.
+     * Calls the corresponding Add/Remove binding on the Go layer and logs the change.
+     */
+    fun enableExposeMapping(mapping: link.yggdrasil.yggstack.android.data.ExposeMapping, enable: Boolean) {
+        val localAddr = "${mapping.localIp}:${mapping.localPort}"
+        val action = if (enable) "Enabling" else "Disabling"
+        logInfo("$action expose rule: ${mapping.protocol.name} port ${mapping.yggPort} -> $localAddr")
+        try {
+            when (mapping.protocol) {
+                link.yggdrasil.yggstack.android.data.Protocol.TCP -> {
+                    if (enable) {
+                        yggstack?.addRemoteTCPMapping(mapping.yggPort.toLong(), localAddr)
+                        logInfo("✓ Enabled TCP expose: port ${mapping.yggPort} -> $localAddr")
+                    } else {
+                        yggstack?.removeRemoteTCPMapping(mapping.yggPort.toLong(), localAddr)
+                        logInfo("✓ Disabled TCP expose: port ${mapping.yggPort} -> $localAddr")
+                    }
+                }
+                link.yggdrasil.yggstack.android.data.Protocol.UDP -> {
+                    if (enable) {
+                        yggstack?.addRemoteUDPMapping(mapping.yggPort.toLong(), localAddr)
+                        logInfo("✓ Enabled UDP expose: port ${mapping.yggPort} -> $localAddr")
+                    } else {
+                        yggstack?.removeRemoteUDPMapping(mapping.yggPort.toLong(), localAddr)
+                        logInfo("✓ Disabled UDP expose: port ${mapping.yggPort} -> $localAddr")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logError("✗ Error ${action.lowercase()} expose rule: ${e.message}")
+        }
+    }
+
+    /**
+     * Enable or disable a single forward (local) mapping while the service is running.
+     */
+    fun enableForwardMapping(mapping: link.yggdrasil.yggstack.android.data.ForwardMapping, enable: Boolean) {
+        val localAddr = "${mapping.localIp}:${mapping.localPort}"
+        val remoteAddr = "[${mapping.remoteIp}]:${mapping.remotePort}"
+        val action = if (enable) "Enabling" else "Disabling"
+        logInfo("$action forward rule: ${mapping.protocol.name} $localAddr -> $remoteAddr")
+        try {
+            when (mapping.protocol) {
+                link.yggdrasil.yggstack.android.data.Protocol.TCP -> {
+                    if (enable) {
+                        yggstack?.addLocalTCPMapping(localAddr, remoteAddr)
+                        logInfo("✓ Enabled TCP forward: $localAddr -> $remoteAddr")
+                    } else {
+                        yggstack?.removeLocalTCPMapping(localAddr, remoteAddr)
+                        logInfo("✓ Disabled TCP forward: $localAddr -> $remoteAddr")
+                    }
+                }
+                link.yggdrasil.yggstack.android.data.Protocol.UDP -> {
+                    if (enable) {
+                        yggstack?.addLocalUDPMapping(localAddr, remoteAddr)
+                        logInfo("✓ Enabled UDP forward: $localAddr -> $remoteAddr")
+                    } else {
+                        yggstack?.removeLocalUDPMapping(localAddr, remoteAddr)
+                        logInfo("✓ Disabled UDP forward: $localAddr -> $remoteAddr")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logError("✗ Error ${action.lowercase()} forward rule: ${e.message}")
+        }
+    }
+
     // Log level helper functions
     private fun logError(message: String) {
         // Always write errors to logcat (even in release builds)

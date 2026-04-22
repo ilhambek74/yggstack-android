@@ -104,6 +104,7 @@ data class BackupConfig(
             var curRemotePort = 0
             var curRemoteIp = ""
             var curProtocol = Protocol.TCP
+            var curShortName = ""
             var inExposeMappingEntry = false
             var inForwardMappingEntry = false
 
@@ -113,7 +114,8 @@ data class BackupConfig(
                         protocol = curProtocol,
                         localPort = curLocalPort,
                         localIp = curLocalIp,
-                        yggPort = curYggPort
+                        yggPort = curYggPort,
+                        shortName = curShortName
                     )
                     inExposeMappingEntry = false
                 }
@@ -123,12 +125,13 @@ data class BackupConfig(
                         localIp = curLocalIp,
                         localPort = curLocalPort,
                         remoteIp = curRemoteIp,
-                        remotePort = curRemotePort
+                        remotePort = curRemotePort,
+                        shortName = curShortName
                     )
                     inForwardMappingEntry = false
                 }
                 curLocalPort = 0; curLocalIp = "127.0.0.1"; curYggPort = 0; curRemotePort = 0
-                curRemoteIp = ""; curProtocol = Protocol.TCP
+                curRemoteIp = ""; curProtocol = Protocol.TCP; curShortName = ""
             }
 
             for (rawLine in tomlString.lines()) {
@@ -192,6 +195,7 @@ data class BackupConfig(
                         "localIp"   -> curLocalIp   = strVal()
                         "yggPort"   -> curYggPort   = intVal()
                         "protocol"  -> curProtocol  = Protocol.valueOf(strVal().uppercase())
+                        "shortName" -> curShortName = strVal()
                     }
                     "forward.mappings" -> when (key) {
                         "localPort"  -> curLocalPort  = intVal()
@@ -199,6 +203,7 @@ data class BackupConfig(
                         "remoteIp"   -> curRemoteIp   = strVal()
                         "remotePort" -> curRemotePort = intVal()
                         "protocol"   -> curProtocol   = Protocol.valueOf(strVal().uppercase())
+                        "shortName"  -> curShortName  = strVal()
                     }
                 }
             }
@@ -295,6 +300,7 @@ data class BackupConfig(
             appendLine("localIp = \"${m.localIp.tomlEscape()}\"")
             appendLine("yggPort = ${m.yggPort}")
             appendLine("protocol = \"${m.protocol.name}\"")
+            if (m.shortName.isNotBlank()) appendLine("shortName = \"${m.shortName.tomlEscape()}\"")
         }
         appendLine()
 
@@ -308,6 +314,7 @@ data class BackupConfig(
             appendLine("remoteIp = \"${m.remoteIp.tomlEscape()}\"")
             appendLine("remotePort = ${m.remotePort}")
             appendLine("protocol = \"${m.protocol.name}\"")
+            if (m.shortName.isNotBlank()) appendLine("shortName = \"${m.shortName.tomlEscape()}\"")
         }
     }
 

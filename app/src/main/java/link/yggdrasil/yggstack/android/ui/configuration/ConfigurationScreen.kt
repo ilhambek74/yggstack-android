@@ -379,11 +379,13 @@ fun ConfigurationScreen(
                     ExposeMappingItem(
                         mapping = mapping,
                         enabled = !isServiceRunning && config.exposeEnabled,
+                        checkboxEnabled = config.exposeEnabled,
                         isDragging = isDragging,
                         onEdit = {
                             editingExposeMapping = mapping
                             showExposeDialog = true
-                        }
+                        },
+                        onToggle = { viewModel.toggleExposeMapping(mapping) }
                     )
                 }
 
@@ -419,11 +421,13 @@ fun ConfigurationScreen(
                     ForwardMappingItem(
                         mapping = mapping,
                         enabled = !isServiceRunning && config.forwardEnabled,
+                        checkboxEnabled = config.forwardEnabled,
                         isDragging = isDragging,
                         onEdit = {
                             editingForwardMapping = mapping
                             showForwardDialog = true
-                        }
+                        },
+                        onToggle = { viewModel.toggleForwardMapping(mapping) }
                     )
                 }
 
@@ -769,11 +773,12 @@ fun PeerItem(
 fun ExposeMappingItem(
     mapping: ExposeMapping,
     enabled: Boolean,
+    checkboxEnabled: Boolean,
     isDragging: Boolean = false,
     onEdit: () -> Unit,
+    onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var checked by remember { mutableStateOf(true) }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -790,8 +795,9 @@ fun ExposeMappingItem(
             style = MaterialTheme.typography.bodyMedium
         )
         Checkbox(
-            checked = checked,
-            onCheckedChange = { checked = it }
+            checked = mapping.enabled,
+            onCheckedChange = onToggle,
+            enabled = checkboxEnabled
         )
     }
 }
@@ -800,11 +806,12 @@ fun ExposeMappingItem(
 fun ForwardMappingItem(
     mapping: ForwardMapping,
     enabled: Boolean,
+    checkboxEnabled: Boolean,
     isDragging: Boolean = false,
     onEdit: () -> Unit,
+    onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var checked by remember { mutableStateOf(true) }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -821,8 +828,9 @@ fun ForwardMappingItem(
             style = MaterialTheme.typography.bodyMedium
         )
         Checkbox(
-            checked = checked,
-            onCheckedChange = { checked = it }
+            checked = mapping.enabled,
+            onCheckedChange = onToggle,
+            enabled = checkboxEnabled
         )
     }
 }
