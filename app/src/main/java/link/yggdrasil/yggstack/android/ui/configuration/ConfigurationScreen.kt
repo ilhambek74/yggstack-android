@@ -2,6 +2,8 @@ package link.yggdrasil.yggstack.android.ui.configuration
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -369,15 +371,19 @@ fun ConfigurationScreen(
                 onToggle = { viewModel.toggleExposeEnabled() },
                 isServiceRunning = isServiceRunning
             ) {
-                config.exposeMappings.forEach { mapping ->
+                ReorderableColumn(
+                    items = config.exposeMappings,
+                    onReorder = { viewModel.reorderExposeMappings(it) },
+                    enabled = !isServiceRunning && config.exposeEnabled
+                ) { mapping, isDragging ->
                     ExposeMappingItem(
                         mapping = mapping,
                         enabled = !isServiceRunning && config.exposeEnabled,
+                        isDragging = isDragging,
                         onEdit = {
                             editingExposeMapping = mapping
                             showExposeDialog = true
-                        },
-                        onDelete = { viewModel.removeExposeMapping(mapping) }
+                        }
                     )
                 }
 
@@ -405,15 +411,19 @@ fun ConfigurationScreen(
                 onToggle = { viewModel.toggleForwardEnabled() },
                 isServiceRunning = isServiceRunning
             ) {
-                config.forwardMappings.forEach { mapping ->
+                ReorderableColumn(
+                    items = config.forwardMappings,
+                    onReorder = { viewModel.reorderForwardMappings(it) },
+                    enabled = !isServiceRunning && config.forwardEnabled
+                ) { mapping, isDragging ->
                     ForwardMappingItem(
                         mapping = mapping,
                         enabled = !isServiceRunning && config.forwardEnabled,
+                        isDragging = isDragging,
                         onEdit = {
                             editingForwardMapping = mapping
                             showForwardDialog = true
-                        },
-                        onDelete = { viewModel.removeForwardMapping(mapping) }
+                        }
                     )
                 }
 
@@ -601,6 +611,13 @@ fun ConfigurationScreen(
                     }
                     deepLinkExposePrefill = null
                     showExposeDialog = false
+                },
+                onDelete = editingExposeMapping?.let { mapping ->
+                    {
+                        viewModel.removeExposeMapping(mapping)
+                        showExposeDialog = false
+                        editingExposeMapping = null
+                    }
                 }
             )
         }
@@ -627,6 +644,13 @@ fun ConfigurationScreen(
                     }
                     deepLinkForwardPrefill = null
                     showForwardDialog = false
+                },
+                onDelete = editingForwardMapping?.let { mapping ->
+                    {
+                        viewModel.removeForwardMapping(mapping)
+                        showForwardDialog = false
+                        editingForwardMapping = null
+                    }
                 }
             )
         }
@@ -745,13 +769,16 @@ fun PeerItem(
 fun ExposeMappingItem(
     mapping: ExposeMapping,
     enabled: Boolean,
+    isDragging: Boolean = false,
     onEdit: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var checked by remember { mutableStateOf(true) }
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(if (isDragging) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .then(if (enabled) Modifier.clickable(onClick = onEdit) else Modifier)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -762,14 +789,10 @@ fun ExposeMappingItem(
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium
         )
-        if (enabled) {
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit mapping")
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_peer))
-            }
-        }
+        Checkbox(
+            checked = checked,
+            onCheckedChange = { checked = it }
+        )
     }
 }
 
@@ -777,13 +800,16 @@ fun ExposeMappingItem(
 fun ForwardMappingItem(
     mapping: ForwardMapping,
     enabled: Boolean,
+    isDragging: Boolean = false,
     onEdit: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var checked by remember { mutableStateOf(true) }
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(if (isDragging) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .then(if (enabled) Modifier.clickable(onClick = onEdit) else Modifier)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -794,14 +820,10 @@ fun ForwardMappingItem(
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium
         )
-        if (enabled) {
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit mapping")
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_peer))
-            }
-        }
+        Checkbox(
+            checked = checked,
+            onCheckedChange = { checked = it }
+        )
     }
 }
 
@@ -813,7 +835,8 @@ fun ExposeMappingDialog(
     existingExposeMappings: List<ExposeMapping> = emptyList(),
     existingForwardMappings: List<ForwardMapping> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (ExposeMapping) -> Unit
+    onConfirm: (ExposeMapping) -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     val fill = prefillMapping ?: initialMapping
     var protocol by remember { mutableStateOf(fill?.protocol ?: Protocol.TCP) }
@@ -858,18 +881,30 @@ fun ExposeMappingDialog(
                 // Protocol selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilterChip(
-                        selected = protocol == Protocol.TCP,
-                        onClick = { protocol = Protocol.TCP },
-                        label = { Text(stringResource(R.string.protocol_tcp)) }
-                    )
-                    FilterChip(
-                        selected = protocol == Protocol.UDP,
-                        onClick = { protocol = Protocol.UDP },
-                        label = { Text(stringResource(R.string.protocol_udp)) }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = protocol == Protocol.TCP,
+                            onClick = { protocol = Protocol.TCP },
+                            label = { Text(stringResource(R.string.protocol_tcp)) }
+                        )
+                        FilterChip(
+                            selected = protocol == Protocol.UDP,
+                            onClick = { protocol = Protocol.UDP },
+                            label = { Text(stringResource(R.string.protocol_udp)) }
+                        )
+                    }
+                    if (onDelete != null) {
+                        IconButton(onClick = onDelete) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = stringResource(R.string.delete_peer),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -985,7 +1020,8 @@ fun ForwardMappingDialog(
     existingExposeMappings: List<ExposeMapping> = emptyList(),
     existingForwardMappings: List<ForwardMapping> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (ForwardMapping) -> Unit
+    onConfirm: (ForwardMapping) -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     val fill = prefillMapping ?: initialMapping
     var protocol by remember { mutableStateOf(fill?.protocol ?: Protocol.TCP) }
@@ -1042,18 +1078,30 @@ fun ForwardMappingDialog(
                 // Protocol selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilterChip(
-                        selected = protocol == Protocol.TCP,
-                        onClick = { protocol = Protocol.TCP },
-                        label = { Text(stringResource(R.string.protocol_tcp)) }
-                    )
-                    FilterChip(
-                        selected = protocol == Protocol.UDP,
-                        onClick = { protocol = Protocol.UDP },
-                        label = { Text(stringResource(R.string.protocol_udp)) }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = protocol == Protocol.TCP,
+                            onClick = { protocol = Protocol.TCP },
+                            label = { Text(stringResource(R.string.protocol_tcp)) }
+                        )
+                        FilterChip(
+                            selected = protocol == Protocol.UDP,
+                            onClick = { protocol = Protocol.UDP },
+                            label = { Text(stringResource(R.string.protocol_udp)) }
+                        )
+                    }
+                    if (onDelete != null) {
+                        IconButton(onClick = onDelete) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = stringResource(R.string.delete_peer),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

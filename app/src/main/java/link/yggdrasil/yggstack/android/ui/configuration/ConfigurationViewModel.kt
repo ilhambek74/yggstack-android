@@ -275,6 +275,10 @@ class ConfigurationViewModel(
         }
     }
 
+    fun reorderExposeMappings(newOrder: List<ExposeMapping>) {
+        updateConfig(_config.value.copy(exposeMappings = newOrder))
+    }
+
     fun toggleExposeEnabled() {
         updateConfig(_config.value.copy(exposeEnabled = !_config.value.exposeEnabled))
     }
@@ -298,6 +302,10 @@ class ConfigurationViewModel(
             currentMappings[index] = newMapping
             updateConfig(_config.value.copy(forwardMappings = currentMappings))
         }
+    }
+
+    fun reorderForwardMappings(newOrder: List<ForwardMapping>) {
+        updateConfig(_config.value.copy(forwardMappings = newOrder))
     }
 
     fun toggleForwardEnabled() {
