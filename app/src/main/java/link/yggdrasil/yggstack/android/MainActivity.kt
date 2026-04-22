@@ -67,14 +67,16 @@ class MainActivity : ComponentActivity() {
                     val localPort = uri.getQueryParameter("localPort")?.toIntOrNull() ?: return null
                     val localIp = uri.getQueryParameter("localIp") ?: "127.0.0.1"
                     val yggPort = uri.getQueryParameter("yggPort")?.toIntOrNull() ?: return null
-                    PendingDeepLink.ExposeLink(ExposeMapping(proto, localPort, localIp, yggPort))
+                    val shortName = uri.getQueryParameter("name") ?: ""
+                    PendingDeepLink.ExposeLink(ExposeMapping(proto, localPort, localIp, yggPort, shortName))
                 }
                 "/mapping/forward" -> {
                     val localIp = uri.getQueryParameter("localIp") ?: "127.0.0.1"
                     val localPort = uri.getQueryParameter("localPort")?.toIntOrNull() ?: return null
                     val remoteIp = uri.getQueryParameter("remoteIp") ?: return null
                     val remotePort = uri.getQueryParameter("remotePort")?.toIntOrNull() ?: return null
-                    PendingDeepLink.ForwardLink(ForwardMapping(proto, localIp, localPort, remoteIp, remotePort))
+                    val shortName = uri.getQueryParameter("name") ?: ""
+                    PendingDeepLink.ForwardLink(ForwardMapping(proto, localIp, localPort, remoteIp, remotePort, shortName))
                 }
                 else -> null
             }

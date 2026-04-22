@@ -48,7 +48,8 @@ data class ExposeMapping(
     val protocol: Protocol,
     val localPort: Int,
     val localIp: String = "127.0.0.1",
-    val yggPort: Int
+    val yggPort: Int,
+    val shortName: String = ""
 ) : Parcelable
 
 /**
@@ -61,7 +62,8 @@ data class ForwardMapping(
     val localIp: String,
     val localPort: Int,
     val remoteIp: String,
-    val remotePort: Int
+    val remotePort: Int,
+    val shortName: String = ""
 ) : Parcelable
 
 /**

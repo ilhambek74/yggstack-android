@@ -38,6 +38,7 @@
     <string name="ygg_port">Yggdrasil Port</string>
     <string name="remote_ip">Remote IP</string>
     <string name="remote_port">Remote Port</string>
+    <string name="short_name">Short Name (optional)</string>
 
     <!-- Diagnostics Screen -->
     <string name="tab_config">Config</string>

@@ -38,6 +38,7 @@
     <string name="ygg_port">Порт Yggdrasil</string>
     <string name="remote_ip">Удалённый IP</string>
     <string name="remote_port">Удалённый порт</string>
+    <string name="short_name">Короткое имя (необязательно)</string>
 
     <!-- Diagnostics Screen -->
     <string name="tab_config">Конфиг</string>

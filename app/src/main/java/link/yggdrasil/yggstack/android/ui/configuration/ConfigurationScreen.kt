@@ -757,7 +757,8 @@ fun ExposeMappingItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "${mapping.protocol.name.lowercase()} ${mapping.localPort} ${mapping.localIp} → ${mapping.yggPort}",
+            text = if (mapping.shortName.isNotBlank()) mapping.shortName
+                   else "${mapping.protocol.name.lowercase()} ${mapping.localPort} ${mapping.localIp} → ${mapping.yggPort}",
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium
         )
@@ -788,7 +789,8 @@ fun ForwardMappingItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "${mapping.protocol.name.lowercase()} ${mapping.localIp}:${mapping.localPort} → [${mapping.remoteIp}]:${mapping.remotePort}",
+            text = if (mapping.shortName.isNotBlank()) mapping.shortName
+                   else "${mapping.protocol.name.lowercase()} ${mapping.localIp}:${mapping.localPort} → [${mapping.remoteIp}]:${mapping.remotePort}",
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium
         )
@@ -818,6 +820,7 @@ fun ExposeMappingDialog(
     var localPort by remember { mutableStateOf(fill?.localPort?.toString() ?: "") }
     var localIp by remember { mutableStateOf(fill?.localIp ?: "127.0.0.1") }
     var yggPort by remember { mutableStateOf(fill?.yggPort?.toString() ?: "") }
+    var shortName by remember { mutableStateOf(fill?.shortName ?: "") }
     
     var localPortError by remember { mutableStateOf(false) }
     var localIpError by remember { mutableStateOf(false) }
@@ -917,6 +920,14 @@ fun ExposeMappingDialog(
                         { Text("Port must be between 1-65535") }
                     } else null
                 )
+
+                OutlinedTextField(
+                    value = shortName,
+                    onValueChange = { shortName = it },
+                    label = { Text(stringResource(R.string.short_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
             }
         },
         confirmButton = {
@@ -925,7 +936,7 @@ fun ExposeMappingDialog(
             TextButton(
                 onClick = {
                     if (validatePort(localPort) && validateIPv4(localIp) && validatePort(yggPort)) {
-                        onConfirm(ExposeMapping(protocol, localPort.toInt(), localIp, yggPort.toInt()))
+                        onConfirm(ExposeMapping(protocol, localPort.toInt(), localIp, yggPort.toInt(), shortName.trim()))
                     }
                 },
                 enabled = allValid
@@ -946,6 +957,7 @@ fun ExposeMappingDialog(
                             append("&localPort=").append(localPort)
                             append("&localIp=").append(localIp)
                             append("&yggPort=").append(yggPort)
+                            if (shortName.isNotBlank()) append("&name=").append(Uri.encode(shortName.trim()))
                         }
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
@@ -981,6 +993,7 @@ fun ForwardMappingDialog(
     var localPort by remember { mutableStateOf(fill?.localPort?.toString() ?: "") }
     var remoteIp by remember { mutableStateOf(fill?.remoteIp ?: "") }
     var remotePort by remember { mutableStateOf(fill?.remotePort?.toString() ?: "") }
+    var shortName by remember { mutableStateOf(fill?.shortName ?: "") }
     
     var localIpError by remember { mutableStateOf(false) }
     var localPortError by remember { mutableStateOf(false) }
@@ -1106,6 +1119,14 @@ fun ForwardMappingDialog(
                         { Text("Port must be between 1-65535") }
                     } else null
                 )
+
+                OutlinedTextField(
+                    value = shortName,
+                    onValueChange = { shortName = it },
+                    label = { Text(stringResource(R.string.short_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
             }
         },
         confirmButton = {
@@ -1116,7 +1137,7 @@ fun ForwardMappingDialog(
                 onClick = {
                     if (validatePort(localPort) && validatePort(remotePort) &&
                         (validateIPv4(localIp) || localIp == "::1") && validateIPv6(remoteIp)) {
-                        onConfirm(ForwardMapping(protocol, localIp, localPort.toInt(), remoteIp, remotePort.toInt()))
+                        onConfirm(ForwardMapping(protocol, localIp, localPort.toInt(), remoteIp, remotePort.toInt(), shortName.trim()))
                     }
                 },
                 enabled = allValid
@@ -1139,6 +1160,7 @@ fun ForwardMappingDialog(
                             append("&localPort=").append(localPort)
                             append("&remoteIp=").append(remoteIp)
                             append("&remotePort=").append(remotePort)
+                            if (shortName.isNotBlank()) append("&name=").append(Uri.encode(shortName.trim()))
                         }
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
