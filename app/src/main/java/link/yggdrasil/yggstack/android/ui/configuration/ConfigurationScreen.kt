@@ -34,14 +34,36 @@ fun ConfigurationScreen(
     val serviceState by viewModel.serviceState.collectAsState()
     val showPrivateKey by viewModel.showPrivateKey.collectAsState()
     val savedScrollPosition by viewModel.scrollPosition.collectAsState()
+    val pendingDeepLink by viewModel.pendingDeepLink.collectAsState()
 
     var peerInput by remember { mutableStateOf("") }
     var editingPeer by remember { mutableStateOf<String?>(null) }
     var showExposeDialog by remember { mutableStateOf(false) }
     var editingExposeMapping by remember { mutableStateOf<ExposeMapping?>(null) }
+    var deepLinkExposePrefill by remember { mutableStateOf<ExposeMapping?>(null) }
     var showForwardDialog by remember { mutableStateOf(false) }
     var editingForwardMapping by remember { mutableStateOf<ForwardMapping?>(null) }
+    var deepLinkForwardPrefill by remember { mutableStateOf<ForwardMapping?>(null) }
     var showPeerDiscovery by remember { mutableStateOf(false) }
+
+    // Open the relevant dialog when a deep link arrives
+    LaunchedEffect(pendingDeepLink) {
+        when (val link = pendingDeepLink) {
+            is PendingDeepLink.ExposeLink -> {
+                editingExposeMapping = null
+                deepLinkExposePrefill = link.mapping
+                showExposeDialog = true
+                viewModel.consumePendingDeepLink()
+            }
+            is PendingDeepLink.ForwardLink -> {
+                editingForwardMapping = null
+                deepLinkForwardPrefill = link.mapping
+                showForwardDialog = true
+                viewModel.consumePendingDeepLink()
+            }
+            null -> Unit
+        }
+    }
 
     val scrollState = rememberScrollState(initial = savedScrollPosition)
     
@@ -559,12 +581,16 @@ fun ConfigurationScreen(
     }
 
     if (showExposeDialog) {
-        key(showExposeDialog, editingExposeMapping) {
+        key(showExposeDialog, editingExposeMapping, deepLinkExposePrefill) {
             ExposeMappingDialog(
                 initialMapping = editingExposeMapping,
+                prefillMapping = deepLinkExposePrefill,
+                existingExposeMappings = config.exposeMappings,
+                existingForwardMappings = config.forwardMappings,
                 onDismiss = {
                     showExposeDialog = false
                     editingExposeMapping = null
+                    deepLinkExposePrefill = null
                 },
                 onConfirm = { mapping ->
                     if (editingExposeMapping != null) {
@@ -573,6 +599,7 @@ fun ConfigurationScreen(
                     } else {
                         viewModel.addExposeMapping(mapping)
                     }
+                    deepLinkExposePrefill = null
                     showExposeDialog = false
                 }
             )
@@ -580,12 +607,16 @@ fun ConfigurationScreen(
     }
 
     if (showForwardDialog) {
-        key(showForwardDialog, editingForwardMapping) {
+        key(showForwardDialog, editingForwardMapping, deepLinkForwardPrefill) {
             ForwardMappingDialog(
                 initialMapping = editingForwardMapping,
+                prefillMapping = deepLinkForwardPrefill,
+                existingExposeMappings = config.exposeMappings,
+                existingForwardMappings = config.forwardMappings,
                 onDismiss = {
                     showForwardDialog = false
                     editingForwardMapping = null
+                    deepLinkForwardPrefill = null
                 },
                 onConfirm = { mapping ->
                     if (editingForwardMapping != null) {
@@ -594,6 +625,7 @@ fun ConfigurationScreen(
                     } else {
                         viewModel.addForwardMapping(mapping)
                     }
+                    deepLinkForwardPrefill = null
                     showForwardDialog = false
                 }
             )
@@ -775,13 +807,17 @@ fun ForwardMappingItem(
 @Composable
 fun ExposeMappingDialog(
     initialMapping: ExposeMapping? = null,
+    prefillMapping: ExposeMapping? = null,
+    existingExposeMappings: List<ExposeMapping> = emptyList(),
+    existingForwardMappings: List<ForwardMapping> = emptyList(),
     onDismiss: () -> Unit,
     onConfirm: (ExposeMapping) -> Unit
 ) {
-    var protocol by remember { mutableStateOf(initialMapping?.protocol ?: Protocol.TCP) }
-    var localPort by remember { mutableStateOf(initialMapping?.localPort?.toString() ?: "") }
-    var localIp by remember { mutableStateOf(initialMapping?.localIp ?: "127.0.0.1") }
-    var yggPort by remember { mutableStateOf(initialMapping?.yggPort?.toString() ?: "") }
+    val fill = prefillMapping ?: initialMapping
+    var protocol by remember { mutableStateOf(fill?.protocol ?: Protocol.TCP) }
+    var localPort by remember { mutableStateOf(fill?.localPort?.toString() ?: "") }
+    var localIp by remember { mutableStateOf(fill?.localIp ?: "127.0.0.1") }
+    var yggPort by remember { mutableStateOf(fill?.yggPort?.toString() ?: "") }
     
     var localPortError by remember { mutableStateOf(false) }
     var localIpError by remember { mutableStateOf(false) }
@@ -801,9 +837,19 @@ fun ExposeMappingDialog(
         }
     }
 
+    // Check if localIp + localPort + protocol is already used by another mapping
+    val localConflict = run {
+        val portNum = localPort.toIntOrNull() ?: return@run false
+        existingExposeMappings.any { m ->
+            m != initialMapping && m.protocol == protocol && m.localIp == localIp && m.localPort == portNum
+        } || existingForwardMappings.any { m ->
+            m.protocol == protocol && m.localIp == localIp && m.localPort == portNum
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initialMapping != null) "Edit Mapping" else stringResource(R.string.add_mapping)) },
+        title = { Text(if (initialMapping != null) "Edit Expose Mapping" else "Add Expose Mapping") },
         text = {
             Column {
                 // Protocol selector
@@ -834,10 +880,12 @@ fun ExposeMappingDialog(
                     label = { Text(stringResource(R.string.local_port)) },
                     placeholder = { Text("1-65535") },
                     modifier = Modifier.fillMaxWidth(),
-                    isError = localPortError,
-                    supportingText = if (localPortError) {
-                        { Text("Port must be between 1-65535") }
-                    } else null
+                    isError = localPortError || localConflict,
+                    supportingText = when {
+                        localPortError -> { { Text("Port must be between 1-65535") } }
+                        localConflict -> { { Text("Already in use by another mapping") } }
+                        else -> null
+                    }
                 )
 
                 OutlinedTextField(
@@ -849,7 +897,7 @@ fun ExposeMappingDialog(
                     label = { Text(stringResource(R.string.local_ip)) },
                     placeholder = { Text("127.0.0.1") },
                     modifier = Modifier.fillMaxWidth(),
-                    isError = localIpError,
+                    isError = localIpError || localConflict,
                     supportingText = if (localIpError) {
                         { Text("Invalid IPv4 address") }
                     } else null
@@ -872,21 +920,46 @@ fun ExposeMappingDialog(
             }
         },
         confirmButton = {
+            val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() && yggPort.isNotEmpty() &&
+                    !localPortError && !localIpError && !yggPortError && !localConflict
             TextButton(
                 onClick = {
                     if (validatePort(localPort) && validateIPv4(localIp) && validatePort(yggPort)) {
                         onConfirm(ExposeMapping(protocol, localPort.toInt(), localIp, yggPort.toInt()))
                     }
                 },
-                enabled = localPort.isNotEmpty() && localIp.isNotEmpty() && yggPort.isNotEmpty() &&
-                        !localPortError && !localIpError && !yggPortError
+                enabled = allValid
             ) {
                 Text(if (initialMapping != null) "Update" else "Add")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            val context = LocalContext.current
+            val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() && yggPort.isNotEmpty() &&
+                    !localPortError && !localIpError && !yggPortError && !localConflict
+            Row {
+                TextButton(
+                    onClick = {
+                        val url = buildString {
+                            append("https://DrewCyber.github.io/mapping/expose")
+                            append("?proto=").append(protocol.name)
+                            append("&localPort=").append(localPort)
+                            append("&localIp=").append(localIp)
+                            append("&yggPort=").append(yggPort)
+                        }
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, url)
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, null))
+                    },
+                    enabled = allValid
+                ) {
+                    Text("Share")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )
@@ -896,14 +969,18 @@ fun ExposeMappingDialog(
 @Composable
 fun ForwardMappingDialog(
     initialMapping: ForwardMapping? = null,
+    prefillMapping: ForwardMapping? = null,
+    existingExposeMappings: List<ExposeMapping> = emptyList(),
+    existingForwardMappings: List<ForwardMapping> = emptyList(),
     onDismiss: () -> Unit,
     onConfirm: (ForwardMapping) -> Unit
 ) {
-    var protocol by remember { mutableStateOf(initialMapping?.protocol ?: Protocol.TCP) }
-    var localIp by remember { mutableStateOf(initialMapping?.localIp ?: "127.0.0.1") }
-    var localPort by remember { mutableStateOf(initialMapping?.localPort?.toString() ?: "") }
-    var remoteIp by remember { mutableStateOf(initialMapping?.remoteIp ?: "") }
-    var remotePort by remember { mutableStateOf(initialMapping?.remotePort?.toString() ?: "") }
+    val fill = prefillMapping ?: initialMapping
+    var protocol by remember { mutableStateOf(fill?.protocol ?: Protocol.TCP) }
+    var localIp by remember { mutableStateOf(fill?.localIp ?: "127.0.0.1") }
+    var localPort by remember { mutableStateOf(fill?.localPort?.toString() ?: "") }
+    var remoteIp by remember { mutableStateOf(fill?.remoteIp ?: "") }
+    var remotePort by remember { mutableStateOf(fill?.remotePort?.toString() ?: "") }
     
     var localIpError by remember { mutableStateOf(false) }
     var localPortError by remember { mutableStateOf(false) }
@@ -934,9 +1011,19 @@ fun ForwardMappingDialog(
         }
     }
 
+    // Check if localIp + localPort + protocol is already used by another mapping
+    val localConflict = run {
+        val portNum = localPort.toIntOrNull() ?: return@run false
+        existingForwardMappings.any { m ->
+            m != initialMapping && m.protocol == protocol && m.localIp == localIp && m.localPort == portNum
+        } || existingExposeMappings.any { m ->
+            m.protocol == protocol && m.localIp == localIp && m.localPort == portNum
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initialMapping != null) "Edit Mapping" else stringResource(R.string.add_mapping)) },
+        title = { Text(if (initialMapping != null) "Edit Forward Mapping" else "Add Forward Mapping") },
         text = {
             Column {
                 // Protocol selector
@@ -967,7 +1054,7 @@ fun ForwardMappingDialog(
                     label = { Text(stringResource(R.string.local_ip)) },
                     placeholder = { Text("127.0.0.1 or ::1") },
                     modifier = Modifier.fillMaxWidth(),
-                    isError = localIpError,
+                    isError = localIpError || localConflict,
                     supportingText = if (localIpError) {
                         { Text("Invalid IP address") }
                     } else null
@@ -982,10 +1069,12 @@ fun ForwardMappingDialog(
                     label = { Text(stringResource(R.string.local_port)) },
                     placeholder = { Text("1-65535") },
                     modifier = Modifier.fillMaxWidth(),
-                    isError = localPortError,
-                    supportingText = if (localPortError) {
-                        { Text("Port must be between 1-65535") }
-                    } else null
+                    isError = localPortError || localConflict,
+                    supportingText = when {
+                        localPortError -> { { Text("Port must be between 1-65535") } }
+                        localConflict -> { { Text("Already in use by another mapping") } }
+                        else -> null
+                    }
                 )
 
                 OutlinedTextField(
@@ -1020,6 +1109,9 @@ fun ForwardMappingDialog(
             }
         },
         confirmButton = {
+            val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() &&
+                    remoteIp.isNotEmpty() && remotePort.isNotEmpty() &&
+                    !localPortError && !localIpError && !remoteIpError && !remotePortError && !localConflict
             TextButton(
                 onClick = {
                     if (validatePort(localPort) && validatePort(remotePort) &&
@@ -1027,16 +1119,40 @@ fun ForwardMappingDialog(
                         onConfirm(ForwardMapping(protocol, localIp, localPort.toInt(), remoteIp, remotePort.toInt()))
                     }
                 },
-                enabled = localPort.isNotEmpty() && localIp.isNotEmpty() && 
-                        remoteIp.isNotEmpty() && remotePort.isNotEmpty() &&
-                        !localPortError && !localIpError && !remoteIpError && !remotePortError
+                enabled = allValid
             ) {
                 Text(if (initialMapping != null) "Update" else "Add")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            val context = LocalContext.current
+            val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() &&
+                    remoteIp.isNotEmpty() && remotePort.isNotEmpty() &&
+                    !localPortError && !localIpError && !remoteIpError && !remotePortError && !localConflict
+            Row {
+                TextButton(
+                    onClick = {
+                        val url = buildString {
+                            append("https://DrewCyber.github.io/mapping/forward")
+                            append("?proto=").append(protocol.name)
+                            append("&localIp=").append(localIp)
+                            append("&localPort=").append(localPort)
+                            append("&remoteIp=").append(remoteIp)
+                            append("&remotePort=").append(remotePort)
+                        }
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, url)
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, null))
+                    },
+                    enabled = allValid
+                ) {
+                    Text("Share")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )

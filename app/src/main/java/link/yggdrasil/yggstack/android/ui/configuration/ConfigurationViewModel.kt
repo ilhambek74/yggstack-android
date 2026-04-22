@@ -16,6 +16,14 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 /**
+ * Represents a mapping pre-filled from a deep link, waiting to be shown in the Add dialog.
+ */
+sealed class PendingDeepLink {
+    data class ExposeLink(val mapping: ExposeMapping) : PendingDeepLink()
+    data class ForwardLink(val mapping: ForwardMapping) : PendingDeepLink()
+}
+
+/**
  * ViewModel for Configuration screen
  */
 class ConfigurationViewModel(
@@ -37,6 +45,9 @@ class ConfigurationViewModel(
 
     private val _scrollPosition = MutableStateFlow(0)
     val scrollPosition: StateFlow<Int> = _scrollPosition.asStateFlow()
+
+    private val _pendingDeepLink = MutableStateFlow<PendingDeepLink?>(null)
+    val pendingDeepLink: StateFlow<PendingDeepLink?> = _pendingDeepLink.asStateFlow()
     
     private val _logsEnabled = MutableStateFlow(true)
     val logsEnabled: StateFlow<Boolean> = _logsEnabled.asStateFlow()
@@ -325,6 +336,14 @@ class ConfigurationViewModel(
 
     fun saveScrollPosition(position: Int) {
         _scrollPosition.value = position
+    }
+
+    fun setPendingDeepLink(link: PendingDeepLink) {
+        _pendingDeepLink.value = link
+    }
+
+    fun consumePendingDeepLink() {
+        _pendingDeepLink.value = null
     }
 
     fun startService() {

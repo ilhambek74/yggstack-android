@@ -28,16 +28,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import link.yggdrasil.yggstack.android.data.ConfigRepository
+import link.yggdrasil.yggstack.android.data.ExposeMapping
+import link.yggdrasil.yggstack.android.data.ForwardMapping
+import link.yggdrasil.yggstack.android.data.Protocol
 import link.yggdrasil.yggstack.android.data.VersionChecker
 import link.yggdrasil.yggstack.android.data.VersionInfo
 import link.yggdrasil.yggstack.android.service.PeerFetcherService
 import link.yggdrasil.yggstack.android.ui.configuration.ConfigurationScreen
 import link.yggdrasil.yggstack.android.ui.configuration.ConfigurationViewModel
+import link.yggdrasil.yggstack.android.ui.configuration.PendingDeepLink
 import link.yggdrasil.yggstack.android.ui.diagnostics.DiagnosticsScreen
 import link.yggdrasil.yggstack.android.ui.settings.SettingsScreen
 import link.yggdrasil.yggstack.android.ui.theme.YggstackAndroidTheme
 import link.yggdrasil.yggstack.android.utils.LocaleHelper
 import link.yggdrasil.yggstack.android.utils.PermissionHelper
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -47,6 +52,32 @@ class MainActivity : ComponentActivity() {
     companion object {
         // Temporary screen state that survives activity recreation but not app restart
         var tempSelectedScreen: Int? = null
+        // Pending deep link as a StateFlow so Compose reacts every time it is set
+        val pendingDeepLinkFlow = MutableStateFlow<PendingDeepLink?>(null)
+
+        fun parseDeepLink(uri: Uri?): PendingDeepLink? {
+            if (uri == null || uri.scheme != "https" || uri.host != "DrewCyber.github.io") return null
+            val proto = when (uri.getQueryParameter("proto")?.uppercase()) {
+                "UDP" -> Protocol.UDP
+                else -> Protocol.TCP
+            }
+            return when (uri.path) {
+                "/mapping/expose" -> {
+                    val localPort = uri.getQueryParameter("localPort")?.toIntOrNull() ?: return null
+                    val localIp = uri.getQueryParameter("localIp") ?: "127.0.0.1"
+                    val yggPort = uri.getQueryParameter("yggPort")?.toIntOrNull() ?: return null
+                    PendingDeepLink.ExposeLink(ExposeMapping(proto, localPort, localIp, yggPort))
+                }
+                "/mapping/forward" -> {
+                    val localIp = uri.getQueryParameter("localIp") ?: "127.0.0.1"
+                    val localPort = uri.getQueryParameter("localPort")?.toIntOrNull() ?: return null
+                    val remoteIp = uri.getQueryParameter("remoteIp") ?: return null
+                    val remotePort = uri.getQueryParameter("remotePort")?.toIntOrNull() ?: return null
+                    PendingDeepLink.ForwardLink(ForwardMapping(proto, localIp, localPort, remoteIp, remotePort))
+                }
+                else -> null
+            }
+        }
     }
     
     override fun attachBaseContext(newBase: Context) {
@@ -59,6 +90,7 @@ class MainActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        parseDeepLink(intent?.data)?.let { pendingDeepLinkFlow.value = it }
         setContent {
             val repository = ConfigRepository(this)
             val theme by repository.themeFlow.collectAsState(initial = "system")
@@ -74,6 +106,11 @@ class MainActivity : ComponentActivity() {
                 MainScreen()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        parseDeepLink(intent.data)?.let { pendingDeepLinkFlow.value = it }
     }
 }
 
@@ -98,6 +135,17 @@ fun MainScreen() {
     // Clear temp screen after using it
     LaunchedEffect(Unit) {
         MainActivity.tempSelectedScreen = null
+    }
+
+    // Consume any pending deep link and forward it to the ViewModel
+    LaunchedEffect(Unit) {
+        MainActivity.pendingDeepLinkFlow.collect { link ->
+            if (link != null) {
+                MainActivity.pendingDeepLinkFlow.value = null
+                selectedScreen = 0 // switch to Configuration tab
+                configViewModel.setPendingDeepLink(link)
+            }
+        }
     }
     
     // Save current screen to temp variable when it changes (for language change recreation)
