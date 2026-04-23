@@ -56,7 +56,8 @@ class MainActivity : ComponentActivity() {
         val pendingDeepLinkFlow = MutableStateFlow<PendingDeepLink?>(null)
 
         fun parseDeepLink(uri: Uri?): PendingDeepLink? {
-            if (uri == null || uri.scheme != "https" || uri.host != "DrewCyber.github.io") return null
+            if (uri == null || uri.scheme != "https" ||
+                !uri.host.equals("DrewCyber.github.io", ignoreCase = true)) return null
             val proto = when (uri.getQueryParameter("proto")?.uppercase()) {
                 "UDP" -> Protocol.UDP
                 else -> Protocol.TCP
