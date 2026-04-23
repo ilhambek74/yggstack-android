@@ -29,6 +29,12 @@ fun <T : Any> ReorderableColumn(
     var dragOffsetY by remember { mutableStateOf(0f) }
     val itemHeights = remember { mutableStateMapOf<T, Float>() }
 
+    // Always-fresh reference to `items` for use inside pointerInput coroutine closures.
+    // pointerInput(item) only restarts when the item key changes, so without this the
+    // `items` captured in onDragEnd / onDragCancel would be stale after the first reorder,
+    // causing the "jumps back to previous position" bug.
+    val latestItems = rememberUpdatedState(items)
+
     if (draggedItem == null) currentItems = items
 
     val nestedScrollConnection = remember {
@@ -84,12 +90,13 @@ fun <T : Any> ReorderableColumn(
                                             }
                                         },
                                         onDragEnd = {
+                                            val finalItems = currentItems
                                             draggedItem = null
                                             dragOffsetY = 0f
-                                            if (currentItems != items) onReorder(currentItems)
+                                            if (finalItems != latestItems.value) onReorder(finalItems)
                                         },
                                         onDragCancel = {
-                                            currentItems = items
+                                            currentItems = latestItems.value
                                             draggedItem = null
                                             dragOffsetY = 0f
                                         }

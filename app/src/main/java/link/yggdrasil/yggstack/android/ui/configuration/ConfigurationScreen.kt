@@ -975,11 +975,11 @@ fun ExposeMappingDialog(
         },
         confirmButton = {
             val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() && yggPort.isNotEmpty() &&
-                    !localPortError && !localIpError && !yggPortError && !localConflict
+                    !localPortError && !localIpError && !yggPortError
             TextButton(
                 onClick = {
                     if (validatePort(localPort) && validateIPv4(localIp) && validatePort(yggPort)) {
-                        onConfirm(ExposeMapping(protocol, localPort.toInt(), localIp, yggPort.toInt(), shortName.trim()))
+                        onConfirm(ExposeMapping(protocol, localPort.toInt(), localIp, yggPort.toInt(), shortName.trim(), enabled = !localConflict))
                     }
                 },
                 enabled = allValid
@@ -990,7 +990,7 @@ fun ExposeMappingDialog(
         dismissButton = {
             val context = LocalContext.current
             val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() && yggPort.isNotEmpty() &&
-                    !localPortError && !localIpError && !yggPortError && !localConflict
+                    !localPortError && !localIpError && !yggPortError
             Row {
                 TextButton(
                     onClick = {
@@ -1188,12 +1188,12 @@ fun ForwardMappingDialog(
         confirmButton = {
             val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() &&
                     remoteIp.isNotEmpty() && remotePort.isNotEmpty() &&
-                    !localPortError && !localIpError && !remoteIpError && !remotePortError && !localConflict
+                    !localPortError && !localIpError && !remoteIpError && !remotePortError
             TextButton(
                 onClick = {
                     if (validatePort(localPort) && validatePort(remotePort) &&
                         (validateIPv4(localIp) || localIp == "::1") && validateIPv6(remoteIp)) {
-                        onConfirm(ForwardMapping(protocol, localIp, localPort.toInt(), remoteIp, remotePort.toInt(), shortName.trim()))
+                        onConfirm(ForwardMapping(protocol, localIp, localPort.toInt(), remoteIp, remotePort.toInt(), shortName.trim(), enabled = !localConflict))
                     }
                 },
                 enabled = allValid
@@ -1205,7 +1205,7 @@ fun ForwardMappingDialog(
             val context = LocalContext.current
             val allValid = localPort.isNotEmpty() && localIp.isNotEmpty() &&
                     remoteIp.isNotEmpty() && remotePort.isNotEmpty() &&
-                    !localPortError && !localIpError && !remoteIpError && !remotePortError && !localConflict
+                    !localPortError && !localIpError && !remoteIpError && !remotePortError
             Row {
                 TextButton(
                     onClick = {

@@ -281,7 +281,20 @@ class ConfigurationViewModel(
 
     fun toggleExposeMapping(mapping: ExposeMapping) {
         val newEnabled = !mapping.enabled
-        val newList = _config.value.exposeMappings.map { if (it == mapping) it.copy(enabled = newEnabled) else it }
+        val newList = _config.value.exposeMappings.map { m ->
+            when {
+                m == mapping -> m.copy(enabled = newEnabled)
+                // When enabling, disable any sibling with the same proto+localIp+localPort
+                newEnabled && m.protocol == mapping.protocol &&
+                        m.localIp == mapping.localIp && m.localPort == mapping.localPort && m.enabled -> {
+                    if (_serviceState.value is ServiceState.Running) {
+                        yggstackService?.enableExposeMapping(m, false)
+                    }
+                    m.copy(enabled = false)
+                }
+                else -> m
+            }
+        }
         updateConfig(_config.value.copy(exposeMappings = newList))
         if (_serviceState.value is ServiceState.Running) {
             yggstackService?.enableExposeMapping(mapping, newEnabled)
@@ -319,7 +332,20 @@ class ConfigurationViewModel(
 
     fun toggleForwardMapping(mapping: ForwardMapping) {
         val newEnabled = !mapping.enabled
-        val newList = _config.value.forwardMappings.map { if (it == mapping) it.copy(enabled = newEnabled) else it }
+        val newList = _config.value.forwardMappings.map { m ->
+            when {
+                m == mapping -> m.copy(enabled = newEnabled)
+                // When enabling, disable any sibling with the same proto+localIp+localPort
+                newEnabled && m.protocol == mapping.protocol &&
+                        m.localIp == mapping.localIp && m.localPort == mapping.localPort && m.enabled -> {
+                    if (_serviceState.value is ServiceState.Running) {
+                        yggstackService?.enableForwardMapping(m, false)
+                    }
+                    m.copy(enabled = false)
+                }
+                else -> m
+            }
+        }
         updateConfig(_config.value.copy(forwardMappings = newList))
         if (_serviceState.value is ServiceState.Running) {
             yggstackService?.enableForwardMapping(mapping, newEnabled)
