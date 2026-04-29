@@ -51,3 +51,4 @@ jobs:
       with:
         name: yggstackNG-apk
         path: app/build/outputs/apk/debug/*.apk
+cd lib/yggstack/mobile && chmod +x build-android.sh && ./build-android.sh
