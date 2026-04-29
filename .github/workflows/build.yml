@@ -46,7 +46,10 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug
 
-    - name: Upload APK
+- name: Copy AAR
+      run: |
+        mkdir -p app/libs
+        cp lib/yggstack/android-build/yggstack.aar app/libs/    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: yggstackNG-apk
